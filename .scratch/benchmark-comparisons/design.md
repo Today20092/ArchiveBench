@@ -29,6 +29,6 @@ Status: approved for implementation
 
 ## Review artifacts
 
-[Specification](spec.md) and five draft tickets in [issues](issues/) record the design. Confirm the testing approach and ticket breakdown before marking tickets ready for implementation.
+[Specification](spec.md) and five dependency-linked tickets in [issues](issues/) record the approved design and testing approach.
 
 The user authorized the complete spec and ticket breakdown by invoking implement-spec. Work the dependency graph and record verification on each ticket.
