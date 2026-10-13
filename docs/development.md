@@ -42,6 +42,8 @@ Synthetic examples contain no personal footage. Do not present their performance
 
 ## Dependencies and licensing
 
+GitHub CI runs these checks on Windows with Python 3.11 and a checksum-verified full FFmpeg 8.1.2 build. It creates a fresh synthetic benchmark, checks the offline report and installs the built wheel in isolation. Local hardware results still need their own probes; CI does not certify a GPU or editor workflow.
+
 The [package manifest](../pyproject.toml) records the Python requirement and development tools. Encoder controls live in `archivebench/encoders.py`; changes affect restart fingerprints. Follow the [agent workflow](agent-workflow.md) when operating a benchmark.
 
 ArchiveBench uses the [MIT license](../LICENSE) and does not redistribute FFmpeg. Anyone redistributing FFmpeg must comply with that build's licensing. See the [third-party notices](../THIRD_PARTY_NOTICES.md).
