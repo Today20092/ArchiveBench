@@ -16,7 +16,7 @@ Status: approved for implementation
 - A project recommendation uses identical settings across all selected samples and meets the target on every sample. Failed or missing samples make the evidence incomplete; averages cannot hide failures.
 - Keep the shareable HTML lightweight. Optional companion media provides synchronized browser-compatible previews and exact benchmark clips. Label converted previews explicitly.
 - Propose non-overlapping validation sections for user review before starting. Keep them out of tuning; insufficient footage makes validation incomplete.
-- Use one total budget with a visible validation reserve. Results remain provisional if validation is incomplete.
+- Use one total budget per invocation across variants and stages, with a visible validation reserve. Results remain provisional if validation is incomplete. Explicit resume retains its existing additional per-invocation allowance and continues frozen validation without tuning from held-out evidence.
 - Use the default triage labels alongside separate implementation progress statuses.
 - Offer editable presets: Match source (default selected), original-resolution 10-bit 4:2:0, capped-1080p 10-bit 4:2:0, and capped-1080p 8-bit 4:2:0. Permit additional supported combinations. Explain that increasing bit depth cannot recover detail.
 - Match source preserves each clip's resolution, chroma, bit depth and frame rate, including mixed-source projects. It re-encodes video and does not require the source codec or bitrate. Encoder/quality settings remain shared across samples for a candidate; unsupported sources prevent it from qualifying. Never silently switch encoders or reduce source chroma.

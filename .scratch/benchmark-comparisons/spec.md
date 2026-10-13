@@ -50,7 +50,7 @@ Run named format variants within one saved experiment. Match source is the defau
 ### Fresh-footage validation and budgets
 
 - Propose one non-overlapping validation section per selected source, ideally from another scene. Let the user review or replace sections before running. Default to twice the tuning-section duration, capped at 60 seconds. Any unavailable coverage must be visible rather than substituted with tuning footage.
-- Use one total budget with a default 30% validation reserve. Stop tuning before consuming the reserve. Continue to disclose preflight/hash overhead and checkpoint partial work.
+- Use one total budget per invocation across all variants and stages, with a default 30% validation reserve. Stop tuning before consuming the reserve. Preserve existing explicit-resume behavior: rerunning can spend another invocation allowance, continuing a frozen validation shortlist rather than tuning from held-out evidence. Disclose session time, preflight/hash overhead and checkpoint partial work.
 - Shortlist the smallest and fastest tuning-qualified candidates from each variant; remove duplicate candidates.
 - Validate fixed settings on every required validation section. A failed candidate stays failed; do not adjust it using validation evidence. More tuning is a new experiment. Never lower the target automatically.
 - Project recommendations require complete, passing tuning and validation evidence. Present tuning-only candidates as provisional, validation failures as failed, and budget-limited coverage as incomplete.
