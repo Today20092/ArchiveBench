@@ -120,6 +120,37 @@ def test_wizard_saves_retention_and_video_choices(tmp_path, monkeypatch, capsys)
     assert "3840x2160 yuv422p10le -> 1920x1080 yuv420p10le" in capsys.readouterr().out
 
 
+def test_wizard_defaults_to_only_match_source(tmp_path, monkeypatch, capsys):
+    import archivebench.cli as cli
+
+    source = tmp_path / "source.mov"
+    source.touch()
+    monkeypatch.setattr(
+        cli,
+        "probe",
+        lambda _: {
+            "format": {"duration": "30"},
+            "streams": [
+                {"codec_type": "video", "width": 3840, "height": 2160, "pix_fmt": "yuv422p10le"}
+            ],
+        },
+    )
+    answers = iter([str(source), "1", "", "", "", "", "", "", "", "", "", "0"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    settings = tmp_path / "settings.json"
+    cli.wizard(settings)
+    config = json.loads(settings.read_text())
+    assert config["variants"] == [
+        {
+            "id": "match-source",
+            "label": "Match source",
+            "pixel_format": "source",
+            "resolution": "original",
+        }
+    ]
+    assert "upper bound" in capsys.readouterr().out
+
+
 @pytest.fixture
 def media_source(tmp_path):
     if not shutil.which("ffmpeg"):
@@ -226,6 +257,125 @@ def test_scaled_benchmark_against_original(media_source, tmp_path):
     save(settings, config)
     with pytest.raises(ValueError, match="changed"):
         benchmark(settings, tmp_path / "bench")
+
+
+def test_named_variants_preserve_mixed_sources_and_separate_resume(media_source, tmp_path):
+    _, source = media_source
+    small = tmp_path / "small.mkv"
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=12",
+            "-t",
+            "1",
+            "-c:v",
+            "ffv1",
+            str(small),
+        ]
+    )
+    config = {
+        "version": 1,
+        "profile": "compact",
+        "mode": "quick",
+        "target_vmaf": 1,
+        "tolerance": 5,
+        "budget_minutes": 3,
+        "encoders": ["libx264"],
+        "variants": [
+            {
+                "id": "match-source",
+                "label": "Match source",
+                "pixel_format": "source",
+                "resolution": "original",
+            },
+            {"id": "small", "label": "Small", "pixel_format": "yuv420p", "resolution": "720p"},
+        ],
+        "samples": [{"path": str(path), "start": 0, "seconds": 1} for path in (source, small)],
+    }
+    settings = tmp_path / "variants.json"
+    save(settings, config)
+    result = benchmark(settings, tmp_path / "variants")
+    from archivebench.report import write_report
+
+    report = write_report(result, tmp_path / "variants")
+    assert "Match source" in report.read_text(encoding="utf-8")
+    measured = {(row["variant"], row["sample"]): row for row in result["trials"]}
+    assert len(measured) == 4, result["skipped"]
+    assert len(result["samples"]) == 2
+    assert [
+        (measured[key]["width"], measured[key]["height"], measured[key]["pixel_format"])
+        for key in [
+            ("match-source", "sample-1"),
+            ("match-source", "sample-2"),
+            ("small", "sample-1"),
+            ("small", "sample-2"),
+        ]
+    ] == [
+        (1440, 810, "yuv422p10le"),
+        (320, 180, "yuv420p"),
+        (1280, 720, "yuv420p"),
+        (320, 180, "yuv420p"),
+    ]
+    assert len({row["output"] for row in result["trials"]}) == len(result["trials"])
+    resumed = benchmark(settings, tmp_path / "variants")
+    assert [(row["id"], row["sha256"]) for row in resumed["trials"]] == [
+        (row["id"], row["sha256"]) for row in result["trials"]
+    ]
+
+
+def test_unsupported_source_variant_does_not_silently_convert(tmp_path):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("FFmpeg integration test")
+    source = tmp_path / "rgb.mkv"
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x180:rate=12",
+            "-t",
+            "1",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "gbrp",
+            str(source),
+        ]
+    )
+    config = {
+        "version": 1,
+        "profile": "compact",
+        "mode": "quick",
+        "budget_minutes": 1,
+        "target_vmaf": 93,
+        "encoders": ["libx264"],
+        "samples": [{"path": str(source), "start": 0, "seconds": 1}],
+        "variants": [
+            {
+                "id": "match-source",
+                "label": "Match source",
+                "pixel_format": "source",
+                "resolution": "original",
+            }
+        ],
+    }
+    settings = tmp_path / "config.json"
+    save(settings, config)
+    result = benchmark(settings, tmp_path / "bench")
+    assert not result["trials"]
+    failure = next(row for row in result["skipped"] if row.get("sample") == "sample-1")
+    assert failure["variant"] == "match-source"
+    assert "unsupported" in failure["reason"]
 
 
 @pytest.mark.parametrize("mode", ["copy", "aac", "none"])

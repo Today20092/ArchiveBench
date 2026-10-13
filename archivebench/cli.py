@@ -8,9 +8,9 @@ from pathlib import Path
 
 from .archive import archive, candidates, cleanup
 from .core import benchmark, primary, probe, run, save, validate_config
-from .encoders import discover
+from .encoders import SPECS, discover
 from .report import write_report
-from .formats import output_video
+from .formats import VARIANT_PRESETS, output_video
 
 
 def wizard(config_path: Path) -> None:
@@ -24,15 +24,31 @@ def wizard(config_path: Path) -> None:
     picked = [files[int(number.strip()) - 1] for number in selection.split(",")]
     profile = input("Profile compact/editing [compact]: ").strip() or "compact"
     mode = input("Mode quick/thorough [quick]: ").strip() or "quick"
-    pixel = (
+    for index, variant in enumerate(VARIANT_PRESETS, 1):
+        print(f"{index}: {variant['label']} ({variant['pixel_format']}, {variant['resolution']})")
+    choice = (
         input(
-            "Video format: source keeps bit depth/chroma; yuv420p = 8-bit 4:2:0, yuv420p10le = 10-bit 4:2:0, yuv422p = 8-bit 4:2:2, yuv422p10le = 10-bit 4:2:2 [source]: "
+            "Choose format preset numbers, comma-separated [1]; or source/yuv420p/yuv420p10le/yuv422p/yuv422p10le for a custom variant: "
         ).strip()
-        or "source"
+        or "1"
     )
-    resolution = (
-        input("Resolution original/2160p/1440p/1080p/720p [original, never upscale]: ").strip()
-        or "original"
+    if choice in ("source", "yuv420p", "yuv420p10le", "yuv422p", "yuv422p10le"):
+        pixel = choice
+        resolution = (
+            input("Resolution original/2160p/1440p/1080p/720p [original, never upscale]: ").strip()
+            or "original"
+        )
+        variants = [
+            {"id": "custom", "label": "Custom", "pixel_format": pixel, "resolution": resolution}
+        ]
+    else:
+        numbers = [int(number.strip()) for number in choice.split(",")]
+        if any(number < 1 or number > len(VARIANT_PRESETS) for number in numbers):
+            raise ValueError("Choose a listed format preset number")
+        variants = [dict(VARIANT_PRESETS[number - 1]) for number in numbers]
+        pixel, resolution = variants[0]["pixel_format"], variants[0]["resolution"]
+    print(
+        "Each named combination is tested separately. Edit its label and video policy in the saved config. Expanding bit depth/chroma cannot restore absent detail."
     )
     print(
         "The benchmark measures video only. These retention choices are saved for archive export."
@@ -60,6 +76,7 @@ def wizard(config_path: Path) -> None:
         "mode": mode,
         "pixel_format": pixel,
         "resolution": resolution,
+        "variants": variants,
         "audio_mode": audio_mode,
         "drop_audio_tracks": drop_tracks,
         "audio_kbps_per_channel": audio_rate,
@@ -75,12 +92,20 @@ def wizard(config_path: Path) -> None:
     if config_path.exists():
         raise ValueError("Config already exists; choose a new path")
     validate_config(config)
-    for path in picked:
-        video = primary(probe(path))
-        target = output_video(video, config)
-        print(
-            f"{path.name}: {video['width']}x{video['height']} {video['pix_fmt']} -> {target['width']}x{target['height']} {target['pix_fmt']}"
-        )
+    for variant in variants:
+        for path in picked:
+            video = primary(probe(path))
+            try:
+                target = output_video(video, variant)
+                print(
+                    f"{variant['label']} / {path.name}: {video['width']}x{video['height']} {video['pix_fmt']} -> {target['width']}x{target['height']} {target['pix_fmt']}"
+                )
+            except ValueError as error:
+                print(f"{variant['label']} / {path.name}: unsupported: {error}")
+    passes, finalists = (2, 4) if mode == "quick" else (4, 8)
+    print(
+        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) * finalists * passes} tuning trials. Only installed compatible encoders run, and adaptive tuning may stop earlier."
+    )
     save(config_path, config)
     print(
         f"Saved {config_path}. Review it, then run: archivebench benchmark {config_path} --output runs/my-test"

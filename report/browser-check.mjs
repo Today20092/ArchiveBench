@@ -140,6 +140,21 @@ try {
   assert.match(await page.locator('#scope-note').innerText(), /does not qualify/);
   assert.equal(await page.locator('#original-video').getAttribute('src'), null);
 
+  const variants = structuredClone(multi);
+  variants.config.variants = [{id:'match-source',label:'Match source',pixel_format:'source',resolution:'original'},{id:'420',label:'4:2:0 comparison',pixel_format:'yuv420p',resolution:'original'}];
+  variants.trials = [{...multi.trials[0],variant:'match-source'}, {...multi.trials[1],variant:'420',pixel_format:'yuv420p'}];
+  await load(variants);
+  assert.equal(await page.locator('#rows tr').count(), 2);
+  assert.match(await page.locator('#rows').innerText(), /Match source/);
+  assert.match(await page.locator('#rows').innerText(), /4:2:0 comparison/);
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  await page.locator('#rows .pick').filter({hasText:'4:2:0 comparison'}).click();
+  await page.locator('#evidence > summary').click();
+  const variantExport = await downloadJSON('#export');
+  assert.equal(variantExport.data.variant, '420');
+  assert.equal(variantExport.data.pixel_format, 'yuv420p');
+  assert.equal(variantExport.data.audio_mode, variants.config.audio_mode ?? 'copy');
+
   const hostile = structuredClone(multi);
   hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';
   await load(hostile);

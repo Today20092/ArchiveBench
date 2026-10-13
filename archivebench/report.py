@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .formats import format_variants
+
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
@@ -35,6 +37,8 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
     fields = [
         "id",
         "sample",
+        "variant",
+        "stage",
         "encoder",
         "quality",
         "pixel_format",
@@ -55,16 +59,20 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "# ArchiveBench results",
         "",
         f"Status: {result['status']}",
-        f"Video format: {result['config']['pixel_format']}; resolution: {result['config'].get('resolution', 'original')}",
+        "Format variants: "
+        + "; ".join(
+            f"{variant['label']} ({variant['pixel_format']}, {variant['resolution']})"
+            for variant in format_variants(result["config"])
+        ),
         "",
-        "VMAF is a model score, not a percentage of original quality. Compare within one format group.",
+        "VMAF is a model score, not a percentage of original quality. Format comparisons include explicit transformations; review chroma and resolution tradeoffs separately.",
         "",
-        "| Sample | Encoder | Quality control | VMAF | SSIM | MiB | Encode seconds |",
-        "|---|---|---:|---:|---:|---:|---:|",
+        "| Variant | Sample | Encoder | Quality control | VMAF | SSIM | MiB | Encode seconds |",
+        "|---|---|---|---:|---:|---:|---:|---:|",
     ]
     for row in result["trials"]:
         summary.append(
-            f"| {row['sample']} | {row['encoder']} | {row['quality']} | {row['vmaf']:.2f} | {row['ssim']:.4f} | {row['bytes'] / 1024**2:.2f} | {row['encode_seconds']:.2f} |"
+            f"| {row.get('variant', 'legacy')} | {row['sample']} | {row['encoder']} | {row['quality']} | {row['vmaf']:.2f} | {row['ssim']:.4f} | {row['bytes'] / 1024**2:.2f} | {row['encode_seconds']:.2f} |"
         )
     summary.extend(
         [

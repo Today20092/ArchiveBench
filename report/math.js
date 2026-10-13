@@ -10,7 +10,7 @@ export function eligible(rows, target, lowTarget = null, maxMinutes = null) {
 export function smallest(rows, target, lowTarget = null, maxMinutes = null) {
   return eligible(rows, target, lowTarget, maxMinutes).sort((a,b) => a.gib - b.gib || a.bytes - b.bytes)[0] ?? null;
 }
-export const configurationKey = row => JSON.stringify([row.encoder, row.quality, row.resolution ?? 'original']);
+export const configurationKey = row => JSON.stringify([row.variant ?? 'legacy', row.encoder, row.quality, row.resolution ?? 'original']);
 
 // Weight projections by measured sample duration, not by the number of samples.
 export function configurations(result, minutes, sampleId = '') {
@@ -54,9 +54,11 @@ export function pareto(rows, dimensions) {
 }
 export function archiveSettings(result, trial) {
   const config = result.config;
+  const variant = config.variants?.find(variant => variant.id === trial.variant) ?? config;
   return {version:2,type:'archive-settings',encoder:trial.encoder,quality:trial.quality,
-    pixel_format:config.pixel_format === 'source' ? 'source' : trial.pixel_format,
-    resolution:trial.resolution ?? config.resolution ?? 'original',
+    pixel_format:variant.pixel_format === 'source' ? 'source' : trial.pixel_format,
+    resolution:trial.resolution ?? variant.resolution ?? 'original',
+    variant:trial.variant ?? 'legacy',variant_label:variant.label ?? 'Single format',
     measured_pixel_format:trial.pixel_format,measured_width:trial.width,measured_height:trial.height,
     minimum_saving:0.1,audio_mode:config.audio_mode ?? 'copy',
     drop_audio_tracks:config.drop_audio_tracks ?? [],audio_kbps_per_channel:config.audio_kbps_per_channel ?? 192,

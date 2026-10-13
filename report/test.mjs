@@ -21,6 +21,13 @@ const collection = () => ({config:{samples:[{},{}]}, samples:[{id:'one',seconds:
  {id:'a2',sample:'two',encoder:'libx265',quality:24,bytes:600,encode_seconds:90,vmaf:91,vmaf_p5:80,ssim:.95},
  {id:'b1',sample:'one',encoder:'libx265',quality:28,bytes:50,encode_seconds:5,vmaf:95,vmaf_p5:92,ssim:.97},
 ]});
+test('format variants never merge measurements and exports retain the selected policy',()=>{
+ const result=collection();result.config.pixel_format='source';
+ result.config.variants=[{id:'source',label:'Match source',pixel_format:'source',resolution:'original'},{id:'small',label:'Small',pixel_format:'yuv420p',resolution:'original'}];
+ result.trials=[{...result.trials[0],variant:'source'},{...result.trials[1],variant:'small',resolution:'original',pixel_format:'yuv420p'}];
+ const rows=configurations(result,1);assert.equal(rows.length,2);assert.equal(rows.every(row=>!row.complete),true);
+ const settings=archiveSettings(result,result.trials[1]);assert.equal(settings.pixel_format,'yuv420p');assert.equal(settings.variant,'small');assert.equal(settings.variant_label,'Small');assert.equal(settings.resolution,'original');
+});
 test('collection uses exact settings, full coverage and weakest sample, not a passing average',()=>{
  const rows=configurations(collection(),1);
  assert.equal(rows.length,2);assert.equal(rows[0].vmaf,91);assert.equal(rows[0].vmaf_p5,80);
