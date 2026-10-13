@@ -94,7 +94,7 @@ def test_review_pairs_measured_frames_at_native_sizes(tmp_path):
                 ]
             )
             assert digest(tmp_path / moment[kind]["path"]) == digest(expected)
-    generate_stills(result, tmp_path, lambda: 0)
+    generate_stills(result, tmp_path, lambda: 60)
     assert trial["review_stills"]["status"] == "complete"
     (tmp_path / evidence["moments"][0]["original"]["path"]).write_bytes(b"changed")
     generate_stills(result, tmp_path, lambda: 0)
@@ -107,3 +107,35 @@ def test_review_pairs_measured_frames_at_native_sizes(tmp_path):
     trial.pop("review_stills")
     generate_stills(result, tmp_path, lambda: 60)
     assert "review_stills" not in trial
+
+
+def test_exhausted_budget_skips_input_hashing(tmp_path, monkeypatch):
+    def unexpected_hash(path):
+        pytest.fail("Exhausted review must not hash inputs")
+
+    monkeypatch.setattr("archivebench.core.digest", unexpected_hash)
+    trial: dict[str, Any] = {
+        "id": "a",
+        "sample": "sample-1",
+        "variant": "source",
+        "encoder": "libx264",
+        "quality": 24,
+        "output": str(tmp_path / "missing.mkv"),
+        "sha256": "missing",
+        "vmaf_frames": [],
+    }
+    result = {
+        "validation_shortlist": [
+            {
+                "variant": "source",
+                "encoder": "libx264",
+                "quality": 24,
+                "evidence_status": "validated",
+            }
+        ],
+        "trials": [trial],
+        "samples": [{"id": "sample-1", "video": {"fps": "30", "width": 160, "height": 90}}],
+    }
+    generate_stills(result, tmp_path, lambda: 0.1)
+    assert trial["review_stills"]["status"] == "incomplete"
+    assert result["validation_shortlist"][0]["evidence_status"] == "validated"

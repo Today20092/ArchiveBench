@@ -7,12 +7,26 @@ from pathlib import Path
 from typing import Any
 
 from .formats import format_variants
+from .media import safe_asset_path
 
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
     for trial in value["trials"] + value.get("screening", []):
         trial.pop("output", None)
+        for field in ("review_media", "review_stills"):
+
+            def sanitize_assets(item: Any) -> None:
+                if isinstance(item, dict):
+                    if "path" in item and not safe_asset_path(item["path"]):
+                        item.pop("path")
+                    for nested in item.values():
+                        sanitize_assets(nested)
+                elif isinstance(item, list):
+                    for nested in item:
+                        sanitize_assets(nested)
+
+            sanitize_assets(trial.get(field))
     value["config"]["samples"] = [
         {**sample, "path": "[local source]"} for sample in value["config"]["samples"]
     ]

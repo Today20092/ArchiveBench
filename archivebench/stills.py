@@ -57,6 +57,8 @@ def generate_stills(
         encoded = Path(trial["output"])
         asset_dir = root / "review" / fingerprint([trial["id"], trial["sha256"]])[:24]
         try:
+            if remaining() <= 0.1:
+                raise TimeoutError("Review budget exhausted")
             if not reference.resolve().is_relative_to(root) or not encoded.resolve().is_relative_to(
                 root
             ):
@@ -98,7 +100,7 @@ def generate_stills(
                         {},
                     )
                     if not (path.is_file() and digest(path) == prior.get("sha256")):
-                        if remaining() <= 0:
+                        if remaining() <= 0.1:
                             raise TimeoutError("Review budget exhausted")
                         temporary = path.with_suffix(".partial.png")
                         if not temporary.resolve().is_relative_to(root):
