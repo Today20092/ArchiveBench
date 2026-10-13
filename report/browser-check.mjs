@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 
 // Load trusted report bytes into an isolated document, never grant browser file-system access.
 const html = await readFile(process.argv[2] || 'runs/demo/benchmark-final/report.html', 'utf8');
@@ -25,6 +26,7 @@ try {
   await mkdir('runs/demo', {recursive:true});
   await page.setViewportSize({width:1440, height:1100});
   await load(payload);
+  await page.screenshot({path:'runs/demo/chart-first-default.png', fullPage:true});
   assert.equal(await page.locator('.plots .chart svg').count(), 2);
   assert.equal(await page.locator('#rows tr').count() > 0, true);
   assert.equal(await page.locator('#ranking button').count(), await page.locator('#rows tr').count());
@@ -114,15 +116,29 @@ try {
   assert.match(await page.locator('#comparison').innerText(), /different samples/);
   await page.locator('#rows .pick').filter({hasText:'CRF 24'}).click();
   await page.locator('#evidence > summary').click();
+  await page.locator('#frame-chart svg').waitFor();
   assert.equal(await page.locator('#frame-chart svg').count(), 1);
   await page.locator('#weak-moments button').first().click();
   assert.match(await page.locator('#cursor-time').innerText(), /1.00 seconds/);
   await page.locator('#review-sample').selectOption('two');
   assert.match(await page.locator('#detail-title').innerText(), /Second/);
   assert.equal(await page.locator('#reviewed').isChecked(), false);
+  await page.getByText('Play original and encoded sample clips together', {exact:true}).click();
+  const clip = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=160x90:rate=30','-t','2','-c:v','libvpx','-deadline','realtime','-an','-f','webm','pipe:1']);
+  for (const kind of ['original','encoded']) await page.locator(`#${kind}-file`).setInputFiles({name:'synthetic-sample.webm',mimeType:'video/webm',buffer:clip});
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => video.readyState >= 2));
+  await page.locator('#weak-moments button').first().click();
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => !video.seeking && video.readyState >= 3 && Math.abs(video.currentTime-1) < .1));
+  await page.evaluate(() => document.querySelector('#original-video').play());
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => !video.paused));
+  await page.evaluate(() => document.querySelector('#encoded-video').pause());
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => video.paused));
+  await page.evaluate(() => {document.querySelector('#encoded-video').currentTime = .4;});
+  await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => Math.abs(video.currentTime-.4) < .1));
   await page.locator('#sample').selectOption('one');
   assert.match(await page.locator('#recommendation').innerText(), /Qualifying measured/);
   assert.match(await page.locator('#scope-note').innerText(), /does not qualify/);
+  assert.equal(await page.locator('#original-video').getAttribute('src'), null);
 
   const hostile = structuredClone(multi);
   hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';
@@ -136,5 +152,5 @@ try {
   assert.equal(await page.locator('#rows tr').count(), 0);
   assert.match(await page.locator('#time-chart').innerText(), /No measurements/);
   assert.deepEqual(failures, []); assert.deepEqual(requests, []);
-  console.log('PASS: offline charts, linked selection/pinning, honest coverage/thresholds, projections, ranking, saved conclusion, exports, review state, frame seeking, hostile labels, empty data, both themes, narrow layouts; no network requests.');
+  console.log('PASS: offline charts, linked selection/pinning, honest coverage/thresholds, projections, ranking, saved conclusion, exports, review state, real playback/seek/pause synchronization, frame seeking, hostile labels, empty data, both themes, narrow layouts; no network requests.');
 } finally { await browser.close(); }

@@ -102,6 +102,7 @@ function drawChart(id, state, x, y, xLabel, yLabel) {
   const definition = defineChart({marks, theme, focus:'nearest', maxFocusDistance:24,
     tooltip:{use:tooltip, anchor:'point', className:'benchmark-tooltip', format:point => {
       const row = point.datum;
+      if (!row?.encoder) return `Mean VMAF floor: ${state.target}`;
       return `${label(row)}\nMean ${number(row.vmaf)} · low 5% ${number(row.vmaf_p5)}\nProjected ${number(row.gib)} GiB · ${durationText(row.minutes)}\n${checkText(row, state)}\n${row.coverage}/${row.expected} samples · click to select`;
     }}, scales:{x:{scale:scaleLinear, nice:true, grid:true, axis:{label:xLabel}}, y:{scale:scaleLinear, nice:true, grid:true, axis:{label:yLabel}}}});
   mount(id, definition, {ariaLabel:`${yLabel} versus ${xLabel}. Select a measured configuration.`, onSelect:point => {if (point?.datum?.id) select(point.datum.id);}});
@@ -158,7 +159,7 @@ function render() {
     ['Projected encoding time', durationText(selected.minutes), `${minRuns === maxRuns ? minRuns : `${minRuns}–${maxRuns}`} timed run${maxRuns === 1 ? '' : 's'} per sample`],
   ].map(([title,value,note]) => `<div class="metric"><small>${escape(title)}</small><div class="value">${escape(value)}</div><p>${escape(note)}</p></div>`).join('');
   renderComparison(selected, baseline);
-  const rankKey = $('rank-by').value, maximum = Math.max(...rows.map(row => row[rankKey]), 1);
+  const rankKey = $('rank-by').value, maximum = Math.max(...rows.map(row => row[rankKey]), Number.EPSILON);
   $('ranking').innerHTML = ordered(rows, rankKey).map(row => `<button class="rank-row" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><span class="rank-label">${escape(label(row))}<small>${escape(checkText(row, state))}${row.id === pinnedId ? ' · pinned baseline' : ''}</small></span><span class="rank-track" aria-hidden="true"><span class="rank-bar" style="width:${100*row[rankKey]/maximum}%;background:${color(row.encoder)}"></span></span><span class="rank-value">${rankKey === 'minutes' ? durationText(row.minutes) : `${number(row[rankKey])}${rankKey === 'gib' ? ' GiB' : ' VMAF'}`}</span></button>`).join('');
   $('rows').innerHTML = ordered(rows, $('sort-by').value).map(row => `<tr class="${row.id === selectedId ? 'selected' : ''} ${row.id === pinnedId ? 'pinned' : ''}"><td><button class="pick" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><i class="swatch" style="background:${color(row.encoder)}"></i>${escape(label(row))}</button><span class="configuration-meta">${escape(codec(row.encoder))} · ${hardware(row.encoder)} · ${escape(result.config.pixel_format)}</span></td><td class="numeric">${number(row.vmaf)}</td><td class="numeric">${number(row.vmaf_p5)}</td><td class="numeric">${number(row.gib)} GiB</td><td class="numeric">${durationText(row.minutes)}</td><td><span class="score-status ${state.qualifying.includes(row) ? 'meets' : 'below'}">${escape(checkText(row, state))}</span><span class="cell-secondary">${row.coverage}/${row.expected} samples</span></td><td><button data-pin="${escape(row.id)}" aria-pressed="${row.id === pinnedId}" aria-label="Pin ${escape(label(row))} as baseline">${row.id === pinnedId ? 'Pinned' : 'Pin'}</button></td></tr>`).join('');
   const policy = archiveSettings(result, selected.trials[0]);
@@ -213,7 +214,7 @@ function drawFrames(trial, baseline, state) {
     const points = data.map(frame => ({...frame, series}));
     marks.push(lineY(points, {x:'seconds', y:'vmaf', stroke, strokeWidth:1.5}), dot(points, {x:'seconds', y:'vmaf', fill:stroke, r:3}));
   }
-  mount('frame-chart', defineChart({marks, theme, focus:'nearest', tooltip:{use:tooltip, className:'benchmark-tooltip', format:point => `${point.datum.series} · ${point.datum.seconds.toFixed(2)}s\nVMAF ${number(point.datum.vmaf)}`}, scales:{x:{scale:scaleLinear, axis:{label:'Seconds from sample start'}}, y:{scale:scaleLinear, grid:true, axis:{label:'Frame VMAF'}}}}), {ariaLabel:'Measured frame quality over sample time. Click to seek both loaded clips.', onSelect:point => {if (Number.isFinite(point?.datum?.seconds)) seek(point.datum.seconds);}});
+  mount('frame-chart', defineChart({marks, theme, focus:'nearest', tooltip:{use:tooltip, className:'benchmark-tooltip', format:point => Number.isFinite(point.datum?.seconds) ? `${point.datum.series} · ${point.datum.seconds.toFixed(2)}s\nVMAF ${number(point.datum.vmaf)}` : `Mean VMAF floor: ${state.target}`}, scales:{x:{scale:scaleLinear, axis:{label:'Seconds from sample start'}}, y:{scale:scaleLinear, grid:true, axis:{label:'Frame VMAF'}}}}), {ariaLabel:'Measured frame quality over sample time. Click to seek both loaded clips.', onSelect:point => {if (Number.isFinite(point?.datum?.seconds)) seek(point.datum.seconds);}});
 }
 
 function resetMedia() {
@@ -240,8 +241,23 @@ for (const kind of ['original','encoded']) {
     mediaURLs[kind] = URL.createObjectURL(file); video.src = mediaURLs[kind];
     $('video-status').textContent = 'Clips loaded locally. Confirm they match this sample and configuration; no identity verification is performed.';
   });
-  video.addEventListener('play', () => {if (other.readyState >= 1 && other.paused) { other.currentTime = video.currentTime; other.play().catch(() => {video.pause(); $('video-status').textContent = 'Playback unavailable. Review these clips in a native player.';}); }});
+  video.addEventListener('play', () => {
+    if (other.readyState >= 1 && other.paused) {
+      if (Math.abs(other.currentTime-video.currentTime) > .08) other.currentTime = video.currentTime;
+      other.play().catch(() => {video.pause(); $('video-status').textContent = 'Playback unavailable. Review these clips in a native player.';});
+    }
+  });
   video.addEventListener('pause', () => {if (!other.paused) other.pause();});
+  video.addEventListener('ended', () => {other.pause();});
+  video.addEventListener('waiting', () => {
+    if (!video.paused && other.readyState >= 1) {
+      video.pause(); other.pause();
+      $('video-status').textContent = 'Playback paused while a clip buffers. Resume when both clips are ready.';
+    }
+  });
+  if (kind === 'original') video.addEventListener('timeupdate', () => {
+    if (!video.paused && !other.paused && other.readyState >= 2 && Math.abs(other.currentTime-video.currentTime) > .12) other.currentTime = video.currentTime;
+  });
   video.addEventListener('seeking', () => {if (other.readyState >= 1 && Math.abs(other.currentTime-video.currentTime) > 0.08) other.currentTime = video.currentTime;});
   video.addEventListener('ratechange', () => {if (other.playbackRate !== video.playbackRate) other.playbackRate = video.playbackRate;});
   video.addEventListener('error', () => {$('video-status').textContent = 'This browser cannot play the selected clip. Use a native player for visual review.';});
