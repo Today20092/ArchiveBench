@@ -129,11 +129,11 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => video.readyState >= 2));
   await page.locator('#weak-moments button').first().click();
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => !video.seeking && video.readyState >= 3 && Math.abs(video.currentTime-1) < .1));
-  await page.evaluate(() => document.querySelector('#original-video').play());
+  await page.locator('#play-pair').click();
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => !video.paused));
-  await page.evaluate(() => document.querySelector('#encoded-video').pause());
+  await page.locator('#pause-pair').click();
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => video.paused));
-  await page.evaluate(() => {document.querySelector('#encoded-video').currentTime = .4;});
+  await page.locator('#seek-pair').fill('0.4');
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => Math.abs(video.currentTime-.4) < .1));
   await page.locator('#sample').selectOption('one');
   assert.match(await page.locator('#recommendation').innerText(), /Qualifying measured/);
@@ -172,9 +172,9 @@ try {
   const heldout = structuredClone(payload);
   const tuning = {...payload.trials.find(trial => (trial.stage ?? 'tuning') === 'tuning'), id:'heldout-tuning', sample:'sample-1', stage:'tuning', vmaf:98};
   heldout.config.samples = [{}];heldout.config.validation_samples = [{}];heldout.config.target_vmaf = 93;
-  heldout.samples = [{...payload.samples[0], id:'sample-1', stage:'tuning'}];
+  heldout.samples = [{...payload.samples[0], id:'sample-1', stage:'tuning'}, {...payload.samples[0], id:'validation-1', stage:'validation'}];
   heldout.trials = [tuning, {...tuning,id:'heldout-check',stage:'validation',sample:'validation-1',vmaf:94}];
-  heldout.validation_shortlist = [{variant:tuning.variant,encoder:tuning.encoder,quality:tuning.quality}];
+  heldout.validation_shortlist = [{variant:tuning.variant ?? 'legacy',encoder:tuning.encoder,quality:tuning.quality}];
   heldout.validation_target = 93;heldout.validation_required = 1;heldout.skipped = [];
   await load(heldout);
   assert.match(await page.locator('#saved-conclusion').textContent(), /validated collection/);

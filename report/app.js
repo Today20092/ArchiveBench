@@ -2,6 +2,7 @@ import { defineChart, dot, lineY, ruleY, mountChart } from '@tanstack/charts';
 import { tooltip } from '@tanstack/charts/tooltip';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { configurations, eligible, durationText, pareto, archiveSettings, tradeoff } from './math.js';
+import { pairedPlayback, safeAssetPath } from './playback.js';
 
 const $ = id => document.getElementById(id);
 const result = JSON.parse($('data').textContent);
@@ -194,7 +195,7 @@ function renderEvidence(selected, baseline, state) {
   const trial = selected.trials.find(row => row.sample === $('review-sample').value);
   const sample = result.samples.find(row => row.id === trial.sample);
   const pinnedTrial = baseline?.trials.find(row => row.sample === sample.id);
-  if (inspectedTrialId !== trial.id) { resetMedia(); inspectedTrialId = trial.id; $('cursor-time').textContent = ''; }
+  if (inspectedTrialId !== trial.id) { loadReviewMedia(trial, sample); inspectedTrialId = trial.id; $('cursor-time').textContent = ''; }
   $('reviewed').checked = reviewed.has(trial.id);
   $('detail-title').textContent = `${sample.label} · ${label(trial)}`;
   const output = {width:trial.width ?? sample.output_video?.width ?? sample.video.width, height:trial.height ?? sample.output_video?.height ?? sample.video.height, pix_fmt:trial.pixel_format ?? sample.output_video?.pix_fmt};
@@ -223,7 +224,25 @@ function drawFrames(trial, baseline, state) {
   mount('frame-chart', defineChart({marks, theme, focus:'nearest', tooltip:{use:tooltip, className:'benchmark-tooltip', format:point => Number.isFinite(point.datum?.seconds) ? `${point.datum.series} · ${point.datum.seconds.toFixed(2)}s\nVMAF ${number(point.datum.vmaf)}` : `Mean VMAF floor: ${state.target}`}, scales:{x:{scale:scaleLinear, axis:{label:'Seconds from sample start'}}, y:{scale:scaleLinear, grid:true, axis:{label:'Frame VMAF'}}}}), {ariaLabel:'Measured frame quality over sample time. Click to seek both loaded clips.', onSelect:point => {if (Number.isFinite(point?.datum?.seconds)) seek(point.datum.seconds);}});
 }
 
+const pair = pairedPlayback($('original-video'), $('encoded-video'), $('video-status'));
+const mediaPanel = $('media-controls');
+$('original-video').closest('.video-grid').after(mediaPanel);
+function loadReviewMedia(trial, sample) {
+  resetMedia();
+  const assets = trial.review_media;
+  const link = $('exact-clip');
+  link.hidden = !safeAssetPath(assets?.exact?.path);
+  link.removeAttribute('href');
+  if (!link.hidden) link.href = assets.exact.path;
+  $('conversion-details').textContent = assets ? ['original','encoded'].filter(kind => assets[kind]).map(kind => {
+    const media = assets[kind];
+    return `${kind}: converted ${media.codec}, ${media.bit_depth}-bit ${media.pixel_format}, ${media.width} × ${media.height}, ${media.fps} fps, video only.`;
+  }).join(' ') : 'No companion previews were generated for this trial.';
+  if (assets?.status === 'available') pair.load([assets.original?.path, assets.encoded?.path]);
+  else $('video-status').textContent = assets?.note ?? 'Companion previews unavailable. Load matching trimmed clips manually or inspect standalone stills.';
+}
 function resetMedia() {
+  pair.reset();
   for (const kind of ['original','encoded']) {
     const video = $(`${kind}-video`);
     video.pause(); video.removeAttribute('src'); video.load();
@@ -233,41 +252,22 @@ function resetMedia() {
   $('video-status').textContent = 'Load both sample clips for synchronized playback and seeking.';
 }
 function seek(seconds) {
-  for (const kind of ['original','encoded']) {
-    const video = $(`${kind}-video`);
-    if (video.readyState >= 1) video.currentTime = Math.min(seconds, video.duration);
-  }
+  pair.seek(seconds);
   $('cursor-time').textContent = `Selected sample time: ${seconds.toFixed(2)} seconds. ${Object.keys(mediaURLs).length === 2 ? 'Loaded players seek together.' : 'Load both trimmed sample clips to review this moment.'}`;
 }
 for (const kind of ['original','encoded']) {
-  const video = $(`${kind}-video`), other = $(`${kind === 'original' ? 'encoded' : 'original'}-video`);
+  const video = $(`${kind}-video`);
   $(`${kind}-file`).addEventListener('change', event => {
     const file = event.target.files[0]; if (!file) return;
-    video.pause(); if (mediaURLs[kind]) URL.revokeObjectURL(mediaURLs[kind]);
+    pair.stop(); if (mediaURLs[kind]) URL.revokeObjectURL(mediaURLs[kind]);
     mediaURLs[kind] = URL.createObjectURL(file); video.src = mediaURLs[kind];
     $('video-status').textContent = 'Clips loaded locally. Confirm they match this sample and configuration; no identity verification is performed.';
   });
-  video.addEventListener('play', () => {
-    if (other.readyState >= 1 && other.paused) {
-      if (Math.abs(other.currentTime-video.currentTime) > .08) other.currentTime = video.currentTime;
-      other.play().catch(() => {video.pause(); $('video-status').textContent = 'Playback unavailable. Review these clips in a native player.';});
-    }
-  });
-  video.addEventListener('pause', () => {if (!other.paused) other.pause();});
-  video.addEventListener('ended', () => {other.pause();});
-  video.addEventListener('waiting', () => {
-    if (!video.paused && other.readyState >= 1) {
-      video.pause(); other.pause();
-      $('video-status').textContent = 'Playback paused while a clip buffers. Resume when both clips are ready.';
-    }
-  });
-  if (kind === 'original') video.addEventListener('timeupdate', () => {
-    if (!video.paused && !other.paused && other.readyState >= 2 && Math.abs(other.currentTime-video.currentTime) > .12) other.currentTime = video.currentTime;
-  });
-  video.addEventListener('seeking', () => {if (other.readyState >= 1 && Math.abs(other.currentTime-video.currentTime) > 0.08) other.currentTime = video.currentTime;});
-  video.addEventListener('ratechange', () => {if (other.playbackRate !== video.playbackRate) other.playbackRate = video.playbackRate;});
-  video.addEventListener('error', () => {$('video-status').textContent = 'This browser cannot play the selected clip. Use a native player for visual review.';});
 }
+$('play-pair').addEventListener('click', () => pair.play());
+$('pause-pair').addEventListener('click', () => pair.stop());
+$('seek-pair').addEventListener('input', event => seek(Number(event.target.value)));
+$('original-video').addEventListener('loadedmetadata', () => {$('seek-pair').max = $('original-video').duration;});
 function download(name, data) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)], {type:'application/json'}));
   const link = document.createElement('a'); link.href = url; link.download = name; link.click();

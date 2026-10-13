@@ -1070,6 +1070,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             if result.get("validation_shortlist")
             else "no qualifying tuning candidates"
         )
+    from .media import generate_review_media
+
+    generate_review_media(result, output, remaining)
     result["status"] = "budget_exhausted" if time.monotonic() - started >= deadline else "completed"
     result["session_seconds"] = time.monotonic() - started
     result["remaining_seconds"] = max(0, budget - result["session_seconds"])
