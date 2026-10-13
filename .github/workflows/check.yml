@@ -1,16 +1,43 @@
 name: Checks
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   source:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --locked
+      - run: uv python install 3.11
+      - run: uv sync --locked --python 3.11
+      - name: Install verified full FFmpeg build
+        shell: pwsh
+        run: |
+          $ffmpegArchive = Join-Path $env:RUNNER_TEMP 'ffmpeg.7z'
+          Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-full_build.7z' -OutFile $ffmpegArchive
+          $expectedHash = '0fff188997a499b5382e0f66e845d4556c48c54f0113ebed4853d556dbdd7059'
+          if ((Get-FileHash -LiteralPath $ffmpegArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'FFmpeg checksum mismatch' }
+          $ffmpegRoot = Join-Path $env:RUNNER_TEMP 'archivebench-ffmpeg'
+          & 7z x $ffmpegArchive "-o$ffmpegRoot" -y | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg extraction failed' }
+          $ffmpegBin = Get-ChildItem -LiteralPath $ffmpegRoot -Filter ffmpeg.exe -Recurse | Select-Object -First 1 -ExpandProperty DirectoryName
+          if (-not $ffmpegBin) { throw 'FFmpeg executable missing' }
+          $ffmpegBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Check required FFmpeg capabilities
+        shell: pwsh
+        run: |
+          $ffmpegFilters = ffmpeg -hide_banner -filters 2>&1 | Out-String
+          if ($ffmpegFilters -notmatch 'libvmaf') { throw 'FFmpeg lacks libvmaf' }
+          $ffmpegEncoders = ffmpeg -hide_banner -encoders 2>&1 | Out-String
+          foreach ($encoder in @('ffv1', 'libx264', 'libx265', 'libsvtav1', 'libvpx')) {
+            if ($ffmpegEncoders -notmatch "\b$encoder\b") { throw "FFmpeg lacks $encoder" }
+          }
+          uv run archivebench doctor
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run ty check
-      - run: uv run pytest -q -k "not real_benchmark"
+      - run: uv run pytest -q
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -18,3 +45,14 @@ jobs:
       - run: npm run build
       - run: npm test
       - run: git diff --exit-code -- archivebench/assets/report.js
+      - run: uv run tests/create_demo.py
+      - run: node report/browser-check.mjs runs/demo/benchmark/report.html
+      - run: uv build
+      - name: Smoke-test the installed wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem dist -Filter '*.whl' | Select-Object -First 1
+          uv tool run --isolated --from $wheel.FullName archivebench --help
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
+          uv tool run --isolated --from $wheel.FullName archivebench doctor
+          if ($LASTEXITCODE -ne 0) { throw 'Installed doctor failed' }
