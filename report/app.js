@@ -2,6 +2,7 @@ import { defineChart, dot, lineY, ruleY, mountChart } from '@tanstack/charts';
 import { tooltip } from '@tanstack/charts/tooltip';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { configurations, eligible, durationText, pareto, archiveSettings, tradeoff } from './math.js';
+import { evidenceTrials, renderStills } from './stills.js';
 
 const $ = id => document.getElementById(id);
 const result = JSON.parse($('data').textContent);
@@ -189,9 +190,10 @@ function renderEvidence(selected, baseline, state) {
   const missing = Math.max(0, result.config.samples.length - result.samples.length);
   if (missing) $('sample-evidence').insertAdjacentHTML('beforeend', `<p class="warn note">${missing} planned samples have no validated sample data. Collection qualification is blocked.</p>`);
   const previous = $('review-sample').value;
-  $('review-sample').replaceChildren(...selected.trials.map(trial => new Option(result.samples.find(sample => sample.id === trial.sample).label, trial.sample)));
-  if (selected.trials.some(trial => trial.sample === previous)) $('review-sample').value = previous;
-  const trial = selected.trials.find(row => row.sample === $('review-sample').value);
+  const reviewTrials = evidenceTrials(result, selected);
+  $('review-sample').replaceChildren(...reviewTrials.map(trial => new Option(`${trial.stage ?? 'tuning'} · ${result.samples.find(sample => sample.id === trial.sample).label}`, trial.sample)));
+  if (reviewTrials.some(trial => trial.sample === previous)) $('review-sample').value = previous;
+  const trial = reviewTrials.find(row => row.sample === $('review-sample').value);
   const sample = result.samples.find(row => row.id === trial.sample);
   const pinnedTrial = baseline?.trials.find(row => row.sample === sample.id);
   if (inspectedTrialId !== trial.id) { resetMedia(); inspectedTrialId = trial.id; $('cursor-time').textContent = ''; }
@@ -206,12 +208,18 @@ function renderEvidence(selected, baseline, state) {
   preview('baseline-preview', pinnedTrial?.preview);
   $('exact').textContent = JSON.stringify({...trial, preview:undefined, vmaf_frames:undefined}, null, 2);
   drawFrames(trial, pinnedTrial, state);
+  renderStills(trial, seek);
 }
 function drawFrames(trial, baseline, state) {
   const frames = trial.vmaf_frames ?? [], pinned = baseline?.id !== trial.id ? baseline?.vmaf_frames ?? [] : [];
   $('frame-chart').hidden = !frames.length;
   $('frame-note').textContent = frames.length ? `${frames.length} scored frames for the selected sample. Green: selected${pinned.length ? '; blue: baseline' : ''}. Click a point or a low-score shortcut to seek loaded sample clips. Gaps may reflect metric subsampling; lines join measured scores.${baseline && baseline.id !== trial.id && !pinned.length ? ' Baseline frame scores are unavailable.' : ''}` : 'Frame-level scores were not saved in this run. Mean and low-5% values cannot reconstruct a timeline. New benchmarks save scored-frame timestamps; no data has been invented for this report.';
-  $('weak-moments').innerHTML = [...frames].sort((a,b) => a.vmaf-b.vmaf).slice(0,3).map(frame => `<button data-seek="${frame.seconds}" class="note">${frame.seconds.toFixed(2)}s · VMAF ${number(frame.vmaf)}</button>`).join('');
+  const weak = [];
+  for (const frame of [...frames].sort((a,b) => a.vmaf-b.vmaf)) {
+    if (weak.every(other => Math.abs(other.seconds-frame.seconds) >= 1)) weak.push(frame);
+    if (weak.length === 3) break;
+  }
+  $('weak-moments').innerHTML = weak.map(frame => `<button data-seek="${frame.seconds}" class="note">${frame.seconds.toFixed(2)}s · VMAF ${number(frame.vmaf)}</button>`).join('');
   if (!frames.length || !$('evidence').open) { clearChart('frame-chart'); return; }
   const theme = chartTheme(), marks = [ruleY([state.target], {stroke:theme.foreground, strokeDasharray:'5 5'})];
   const accent = document.documentElement.classList.contains('light') ? '#126e54' : '#73e0bd';
@@ -288,7 +296,7 @@ document.querySelector('.plots').addEventListener('click', event => {
   render();
 });
 $('color-mode').addEventListener('change', () => {hiddenEncoders.clear(); render();});
-for (const id of ['sample','minutes','target','low-target','max-time','rank-by','sort-by']) $(id).addEventListener('input', () => {if (id === 'minutes') $('duration').value = 'custom'; render();});
+for (const id of ['sample','minutes','target','low-target','max-time','rank-by','sort-by']) $(id).addEventListener('input', () => {if (id === 'minutes') $('duration').value = 'custom'; if (id === 'sample' && $('sample').value) $('review-sample').value = $('sample').value; render();});
 $('duration').addEventListener('change', () => {if ($('duration').value !== 'custom') $('minutes').value = $('duration').value; render();});
 $('reset').addEventListener('click', () => {$('target').value = result.config.target_vmaf; $('low-target').value = ''; $('max-time').value = ''; $('sample').value = ''; $('minutes').value = sourceMinutes; $('duration').value = 'custom'; hiddenEncoders.clear(); render();});
 document.querySelector('.quality-starts').addEventListener('click', event => {const button = event.target.closest('[data-target]'); if (button) {$('target').value = button.dataset.target; render();}});

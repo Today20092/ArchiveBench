@@ -307,6 +307,7 @@ def score(
         "ssim": float(ssim.group(1)),
         "vmaf_frames": [
             {
+                "frame_index": frame["frameNum"],
                 "seconds": float(Fraction(frame["frameNum"], 1) / fps),
                 "vmaf": frame["metrics"]["vmaf"],
             }
@@ -1065,6 +1066,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             if result.get("validation_shortlist")
             else "no qualifying tuning candidates"
         )
+    from .stills import generate_stills
+
+    generate_stills(result, output, remaining)
     result["status"] = "budget_exhausted" if time.monotonic() - started >= deadline else "completed"
     result["session_seconds"] = time.monotonic() - started
     result["remaining_seconds"] = max(0, budget - result["session_seconds"])
