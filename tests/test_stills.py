@@ -99,3 +99,11 @@ def test_review_pairs_measured_frames_at_native_sizes(tmp_path):
     (tmp_path / evidence["moments"][0]["original"]["path"]).write_bytes(b"changed")
     generate_stills(result, tmp_path, lambda: 0)
     assert trial["review_stills"]["status"] == "incomplete"
+    trial["vmaf_frames"] = [{"frame_index": 40, "vmaf": 75}]
+    generate_stills(result, tmp_path, lambda: 60)
+    assert len(trial["review_stills"]["moments"]) == 1
+    assert "Only 1 separated" in trial["review_stills"]["note"]
+    result["validation_shortlist"][0]["evidence_status"] = "failed"
+    trial.pop("review_stills")
+    generate_stills(result, tmp_path, lambda: 60)
+    assert "review_stills" not in trial

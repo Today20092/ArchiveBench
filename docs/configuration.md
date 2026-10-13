@@ -80,3 +80,11 @@ New benchmarks save `vmaf_frames` with scored-frame timestamps relative to sampl
 Existing version 1 archive settings/manifests retain their previous AAC/drop-tracks-3/4 behavior for restart and cleanup. New report exports default to copying all audio and retained streams, even when rebuilding a report from an older benchmark. The report displays this policy before export.
 
 The runner writes MKV. Unsupported data streams and cover art stop a new archive job. Copied audio/subtitle payloads and attachment contents are verified, alongside stream selection, dispositions, metadata, chapters, video, hashes, savings and full audio/video decode. Application-specific metadata and editor compatibility still need a separate test. Originals remain intact until a separate, explicit cleanup.
+# Weak-moment visual review
+
+Validated finalists receive paired PNG stills after scoring, within the remaining invocation budget. The report offers every measured tuning and validation sample for the selected settings. Stills select up to three scored frames at least one second apart. Sparse scores can supply fewer moments. Each pair uses the same decoded frame index and sample-relative time, including when scoring skips frames.
+
+The originals and encodes retain their native image dimensions. Crop zoom and horizontal/vertical position use the same normalized region in each image. Enlarging a smaller output does not recover detail. RGB PNG display conversion and browser rendering cannot certify preservation of 4:2:2 chroma or 10-bit detail.
+
+Keep the generated `review` folder beside `report.html` to use native-size stills. Missing assets leave the embedded first-frame previews available. Asset failures do not change metric validation. Resume with more time to finish assets. Sharing the companion folder reveals footage, so review its contents before sharing.
+

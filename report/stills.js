@@ -1,6 +1,6 @@
 export function evidenceTrials(result, selected) {
   const first = selected.trials[0];
-  return result.trials.filter(trial => trial.variant === first.variant && trial.encoder === first.encoder && trial.quality === first.quality);
+  return result.trials.filter(trial => result.samples.some(sample => sample.id === trial.sample) && trial.variant === first.variant && trial.encoder === first.encoder && trial.quality === first.quality);
 }
 
 export function safeStillPath(path) {
