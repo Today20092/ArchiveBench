@@ -9,6 +9,7 @@ ArchiveBench's first public release benchmarks archival video encodes on your ow
 - Inspect low-scoring moments with native-size crops and synchronized companion previews.
 - Export measured settings to the optional batch archive runner, which preserves originals during encoding.
 - Install with uv from the release wheel, or clone the repository for use with a coding agent.
+- Download the synthetic demo ZIP, extract it and open `report.html` to explore the report with its companion assets.
 
 Windows is the tested platform. Hardware availability depends on the installed FFmpeg build, device and driver. macOS/Linux hardware support is experimental. HDR, interlaced and variable-frame-rate footage are unsupported. VMAF does not prove editing or color fidelity; inspect exact clips before archiving. Editor relinking and application-specific metadata require workflow testing.
 

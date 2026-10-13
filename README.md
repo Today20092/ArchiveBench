@@ -28,6 +28,8 @@ uv run archivebench benchmark local-config.json --output runs/first-test
 
 Open `runs/first-test/report.html`. No server, internet connection or Node installation is needed to view it. Compare measured settings, inspect previews and estimate size/time for longer footage. Review the saved clips before accepting a result.
 
+Want to see the report first? Download the [synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. Its measurements demonstrate the interface; benchmark your own footage and hardware to choose settings.
+
 Prefer an installed command? See the [standalone installation](docs/installation.md#install-the-command). Python distributions are available from [GitHub Releases](https://github.com/Today20092/ArchiveBench/releases).
 
 Select motion, fine detail and dark/noisy examples. A representative sample is more informative than a large number of similar clips. `setup` lists eligible clips from a folder and asks which to include; it does not infer scene diversity. Proxy and generated archive folders are excluded.
