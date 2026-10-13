@@ -54,14 +54,14 @@ try {
   assert.match(await page.locator('#metrics').innerText(), /10 min footage/);
   await page.locator('.limits > summary').click();
   await page.locator('#low-target').fill('100');
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#low-target').fill('');
   await page.locator('#max-time').fill('0.1');
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#reset').click();
   assert.equal(await page.locator('#saved-conclusion').textContent(), saved);
   await page.locator('#target').fill('100');
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#reset').click();
   await page.locator('#rank-by').selectOption('minutes');
   await page.locator('#sort-by').selectOption('minutes');
@@ -109,7 +109,7 @@ try {
   ];
   multi.config.target_vmaf = 93;
   await load(multi);
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   assert.match(await page.locator('#rows').innerText(), /Incomplete: 1\/2 samples/);
   await page.locator('#pin').click();
   await page.locator('#ranking button[aria-pressed="false"]').first().click();
@@ -136,7 +136,7 @@ try {
   await page.locator('#seek-pair').fill('0.4');
   await page.waitForFunction(() => [...document.querySelectorAll('video')].every(video => Math.abs(video.currentTime-.4) < .1));
   await page.locator('#sample').selectOption('one');
-  assert.match(await page.locator('#recommendation').innerText(), /Qualifying measured/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   assert.match(await page.locator('#scope-note').innerText(), /does not qualify/);
   assert.equal(await page.locator('#original-video').getAttribute('src'), null);
 
@@ -147,7 +147,7 @@ try {
   assert.equal(await page.locator('#rows tr').count(), 2);
   assert.match(await page.locator('#rows').innerText(), /Match source/);
   assert.match(await page.locator('#rows').innerText(), /4:2:0 comparison/);
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#rows .pick').filter({hasText:'4:2:0 comparison'}).click();
   await page.locator('#evidence > summary').click();
   const variantExport = await downloadJSON('#export');
@@ -179,10 +179,17 @@ try {
   await load(heldout);
   assert.match(await page.locator('#saved-conclusion').textContent(), /validated collection/);
   await page.locator('#target').fill('96');await page.locator('#target').dispatchEvent('input');
-  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   const heldoutSettings = await downloadJSON('#export');
   assert.equal(heldoutSettings.data.validation_target,93);
   assert.equal(heldoutSettings.data.validation_coverage,1);
+  heldout.trials[1].vmaf = 92;
+  await load(heldout);
+  await page.locator('#target').fill('90');await page.locator('#target').dispatchEvent('input');
+  assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
+  assert.equal(await page.locator('.recommendation-choice').count(),0);
+  assert.equal(await page.locator('#rows tr').count(),1);
+  assert.equal((await downloadJSON('#export')).data.evidence_status,'failed');
 
   const hostile = structuredClone(multi);
   hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';

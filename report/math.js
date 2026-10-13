@@ -12,6 +12,9 @@ export function eligible(rows, target, lowTarget = null, maxMinutes = null) {
 export function smallest(rows, target, lowTarget = null, maxMinutes = null) {
   return eligible(rows, target, lowTarget, maxMinutes).sort((a,b) => a.gib - b.gib || a.bytes - b.bytes)[0] ?? null;
 }
+export function recommendations(rows, target, lowTarget = null, maxMinutes = null, sampleId = '') {
+  return sampleId ? [] : eligible(rows, target, lowTarget, maxMinutes).filter(row => row.evidence_status === 'validated');
+}
 export const configurationKey = row => JSON.stringify([row.variant ?? 'legacy', row.encoder, row.quality, row.resolution ?? 'original']);
 
 export function evidenceStatus(result, row) {

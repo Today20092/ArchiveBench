@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {project,smallest,durationText,pareto,archiveSettings,configurations,eligible,tradeoff} from './math.js';
+import {project,smallest,durationText,pareto,archiveSettings,configurations,eligible,tradeoff,recommendations} from './math.js';
 test('projections convert seconds/bytes consistently',()=>{const row=project({bytes:1073741824,encode_seconds:40},20,10);assert.equal(row.gib,30);assert.equal(row.minutes,20);});
 test('winner must meet target, not merely be closest',()=>{assert.equal(smallest([{bytes:1,vmaf:90},{bytes:2,vmaf:96}],95).bytes,2);assert.equal(smallest([{bytes:1,vmaf:90}],95),null);});
 test('duration formatting',()=>{assert.equal(durationText(100),'1h 40m');});
@@ -74,10 +74,17 @@ test('empty collections and unknown sample scopes remain empty',()=>{
 test('fresh validation requires every holdout at saved target and display changes cannot forge exports',()=>{
  const result={identity:'fixed',config:{samples:[{}],validation_samples:[{}],target_vmaf:93},samples:[{id:'sample-1',seconds:1}],trials:[{id:'t',sample:'sample-1',stage:'tuning',variant:'legacy',encoder:'libx264',quality:18,bytes:100,encode_seconds:1,vmaf:96,ssim:1}],skipped:[],validation_shortlist:[{variant:'legacy',encoder:'libx264',quality:18}],validation_required:1,validation_target:93};
  let row=configurations(result,1)[0];assert.equal(row.evidence_status,'incomplete');assert.equal(archiveSettings(result,row).validated,false);
+ assert.deepEqual(recommendations([row],90),[]);
  result.trials.push({...result.trials[0],id:'v',sample:'validation-1',stage:'validation',vmaf:92});
  row=configurations(result,1)[0];assert.equal(row.evidence_status,'failed');assert.equal(archiveSettings(result,row).validated,false);
+ assert.equal(eligible([row],90).length,1);assert.deepEqual(recommendations([row],90),[]);
  result.trials[1].vmaf=94;
  row=configurations(result,1)[0];assert.equal(row.evidence_status,'validated');assert.equal(archiveSettings(result,row).validated,true);
+ assert.equal(recommendations([row],93).length,1);assert.deepEqual(recommendations([row],95),[]);
+ assert.deepEqual(recommendations([row],90,null,null,'sample-1'),[]);
+ result.config.validation_samples.push({});result.validation_required=2;
+ assert.deepEqual(recommendations(configurations(result,1),90),[]);
+ result.config.validation_samples.pop();result.validation_required=1;
  assert.equal(eligible([row],95).length,0);assert.equal(eligible([row],93).length,1);assert.equal(archiveSettings(result,row).validation_target,93);
  result.skipped.push({stage:'validation',variant:'legacy',encoder:'libx264',quality:18,terminal:true});
  assert.equal(configurations(result,1)[0].evidence_status,'failed');

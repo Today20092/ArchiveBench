@@ -5,7 +5,7 @@ import shutil
 
 import pytest
 
-from archivebench.core import digest, run, save
+from archivebench.core import digest, fingerprint, run, save
 from archivebench.media import generate_review_media
 
 
@@ -22,6 +22,60 @@ def test_companion_paths_reject_external_and_escaped_locations():
         "C:/a",
     ]:
         assert not safe_asset_path(path)
+
+
+def test_preview_temporary_symlink_cannot_overwrite_original(tmp_path: Path, monkeypatch):
+    root = tmp_path / "run"
+    reference = root / "sample-1" / "reference.mkv"
+    reference.parent.mkdir(parents=True)
+    reference.write_bytes(b"reference")
+    save(reference.with_name("reference.json"), {"sha256": digest(reference)})
+    encoded = root / "trial.mkv"
+    encoded.write_bytes(b"encoded")
+    trial: dict[str, Any] = {
+        "id": "trial-1",
+        "sample": "sample-1",
+        "variant": "source",
+        "encoder": "libx264",
+        "quality": 18,
+        "output": str(encoded),
+        "sha256": digest(encoded),
+    }
+    folder = root / "review" / fingerprint({"trial": trial["id"], "sha256": trial["sha256"]})[:20]
+    folder.mkdir(parents=True)
+    original = tmp_path / "original.mov"
+    original.write_bytes(b"preserve original")
+    temporary = folder / "original-partial.mp4"
+    try:
+        temporary.symlink_to(original)
+    except OSError:
+        pytest.skip("Symlinks are unavailable")
+    calls = []
+
+    def unsafe_encoder(command, timeout):
+        calls.append(command)
+        Path(command[-1]).write_bytes(b"overwritten")
+        raise RuntimeError("Simulated encoding failure")
+
+    monkeypatch.setattr("archivebench.core.run", unsafe_encoder)
+    result = {
+        "config": {},
+        "samples": [{"id": "sample-1", "video": {"frames": 1, "fps": "24"}}],
+        "trials": [trial],
+        "validation_shortlist": [
+            {
+                "variant": "source",
+                "encoder": "libx264",
+                "quality": 18,
+                "evidence_status": "validated",
+            }
+        ],
+    }
+    generate_review_media(result, root, lambda: 60)
+    assert original.read_bytes() == b"preserve original"
+    assert calls == []
+    assert trial["review_media"]["status"] == "unavailable"
+    assert result["validation_shortlist"][0]["evidence_status"] == "validated"
 
 
 def test_validated_finalists_get_fractional_rate_paired_previews(tmp_path: Path):
