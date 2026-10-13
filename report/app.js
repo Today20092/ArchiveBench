@@ -1,7 +1,7 @@
 import { defineChart, dot, lineY, ruleY, mountChart } from '@tanstack/charts';
 import { tooltip } from '@tanstack/charts/tooltip';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
-import { configurations, eligible, durationText, pareto, archiveSettings, tradeoff } from './math.js';
+import { configurations, eligible, recommendations, durationText, pareto, archiveSettings, tradeoff } from './math.js';
 import { evidenceTrials, renderStills } from './stills.js';
 import { pairedPlayback, safeAssetPath } from './playback.js';
 
@@ -35,7 +35,7 @@ $('run-limit').textContent = result.status === 'completed' ? 'Short-sample evide
 $('skip-title').textContent = `Skipped or failed configurations (${result.skipped.length})`;
 $('skips').textContent = JSON.stringify(result.skipped, null, 2);
 $('environment').textContent = JSON.stringify({environment:result.environment, identity:result.identity, config:result.config, tools:Object.fromEntries(Object.entries(result.tools).map(([name, value]) => [name, {version:value.version.split('\n')[0], sha256:value.sha256}]))}, null, 2);
-const savedRows = eligible(configurations(result, 60), result.config.target_vmaf).filter(row => row.evidence_status === 'validated');
+const savedRows = recommendations(configurations(result, 60), result.config.target_vmaf);
 const savedSmallest = [...savedRows].sort((a,b) => a.gib-b.gib)[0];
 const savedFastest = [...savedRows].sort((a,b) => a.minutes-b.minutes)[0];
 $('saved-conclusion').textContent = `Saved mean target: ${result.config.target_vmaf}. ` + (savedSmallest ? `Smallest validated collection choice: ${label(savedSmallest)}. Fastest: ${label(savedFastest)}. Fresh footage passed the saved target. Visual review remains separate.` : 'Provisional tuning evidence. No validated project recommendation, because fresh-footage validation is absent, failed or incomplete. Per-sample results remain available for exploration.');
@@ -49,7 +49,7 @@ function current() {
   const target = Math.min(100, Math.max(0, Number($('target').value) || 0));
   const lowTarget = optional('low-target', 0, 100), maxMinutes = optional('max-time', 0.1);
   const rows = configurations(result, minutes, $('sample').value);
-  return {minutes, target, lowTarget, maxMinutes, rows, qualifying:eligible(rows, target, lowTarget, maxMinutes)};
+  return {minutes, target, lowTarget, maxMinutes, rows, qualifying:eligible(rows, target, lowTarget, maxMinutes), recommended:recommendations(rows, target, lowTarget, maxMinutes, $('sample').value)};
 }
 function checkText(row, state) {
   if (!row.complete) return `Incomplete: ${row.coverage}/${row.expected} samples`;
@@ -137,7 +137,7 @@ function renderComparison(selected, baseline) {
 
 function render() {
   const state = current(), {rows, minutes, target} = state;
-  const {smallest, fastest} = choices(state.qualifying);
+  const {smallest, fastest} = choices(state.recommended);
   if (!rows.some(row => row.id === selectedId)) selectedId = (smallest ?? rows[0])?.id ?? null;
   const selected = rows.find(row => row.id === selectedId), baseline = rows.find(row => row.id === pinnedId);
   if (!baseline) pinnedId = null;
@@ -146,7 +146,7 @@ function render() {
   drawChart('time-chart', state, 'minutes', 'gib', 'Projected encoding (minutes)', 'Projected video size (GiB)');
   drawChart('quality-chart', state, 'gib', 'vmaf', 'Projected video size (GiB)', $('sample').value ? 'Mean VMAF' : 'Weakest sample mean VMAF');
   const card = (row, title) => `<button class="recommendation-choice" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><span class="recommendation-label">${title} · ${escape(row.evidence_status)}</span><strong>${escape(label(row))}</strong><span class="recommendation-values">Projected ${number(row.gib)} GiB · ${durationText(row.minutes)} · mean ≥ ${number(row.vmaf)}</span></button>`;
-  $('recommendation').innerHTML = smallest ? `<h2>Qualifying measured choices</h2><div class="recommendation-grid">${card(smallest, smallest.id === fastest.id ? 'Smallest and fastest qualifying choice' : 'Smallest qualifying archive')}${smallest.id !== fastest.id ? card(fastest, 'Fastest qualifying encode') : ''}</div><p class="note">${state.qualifying.length} of ${rows.length} configurations pass the active checks in this scope. Visual review remains separate.</p>` : '<h2>No configuration meets these requirements</h2><p class="note">Inspect missing coverage or failed thresholds below. Changing display constraints does not produce new measurements.</p>';
+  $('recommendation').innerHTML = smallest ? `<h2>Validated project choices</h2><div class="recommendation-grid">${card(smallest, smallest.id === fastest.id ? 'Smallest and fastest validated choice' : 'Smallest validated archive')}${smallest.id !== fastest.id ? card(fastest, 'Fastest validated encode') : ''}</div><p class="note">${state.recommended.length} of ${rows.length} configurations have complete tuning and fresh-validation evidence and pass the active checks. Visual review remains separate.</p>` : '<h2>No validated project recommendation in this view</h2><p class="note">Explore measurements below or switch to the whole collection. Missing, failed or provisional validation cannot qualify an archive recommendation. Changing display constraints does not produce new evidence.</p>';
   $('selection').hidden = !selected;
   $('evidence').hidden = !selected;
   if (!selected) {

@@ -46,7 +46,7 @@ def generate_review_media(
         return resolved
 
     def preview(source: Path, destination: Path, video: dict[str, Any]) -> dict[str, Any]:
-        temporary = destination.with_name(destination.stem + "-partial.mp4")
+        temporary = bounded(destination.with_name(destination.stem + "-partial.mp4"))
         try:
             run(
                 [
