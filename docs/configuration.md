@@ -1,6 +1,19 @@
 # Experiment configuration
 
-Create a config with `archivebench setup`, then review it. Each run uses one output policy. Use separate configs and run folders to compare policies. With `source`, each sample retains its own supported bit depth and chroma; compare recommendations within that sample.
+Create a config with `archivebench setup`, then review it. Select named format variants to compare output policies in one run and report. Setup selects only Match source by default, and offers original-resolution 10-bit 4:2:0 and capped-1080p 8/10-bit 4:2:0 presets. Each combination is explicit. The displayed test count is an upper bound because compatibility checks and adaptive tuning can reduce the workload.
+
+Edit the preset labels and choices in the saved `variants` list, or add supported combinations. For example:
+
+```json
+"variants": [
+  {"id": "match-source", "label": "Match source", "pixel_format": "source", "resolution": "original"},
+  {"id": "420-10-1080p", "label": "10-bit 4:2:0 capped 1080p", "pixel_format": "yuv420p10le", "resolution": "1080p"}
+]
+```
+
+IDs must be unique lowercase names containing digits or hyphens. Variants contain only `id`, `label`, `pixel_format` and `resolution`. Audio and other stream retention choices apply to the whole experiment. Existing configs without `variants` remain one single-format experiment. When `variants` is present, its policies control encoding instead of the legacy top-level pixel format and resolution fields.
+
+Match source resolves each clip separately. Mixed 4K 10-bit 4:2:2 and 1080p 8-bit 4:2:0 sources keep their respective dimensions, chroma, bit depth and frame rate while being re-encoded. Codec and bitrate may change. Unsupported source/encoder combinations are recorded under that variant; the tool never silently switches encoder or format. Measurements, cache identities and archive exports retain variant identity.
 
 ```json
 {

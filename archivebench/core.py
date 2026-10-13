@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .encoders import SPECS, discover, options
-from .formats import output_video, scale_filter, validate_formats
+from .formats import format_variants, output_video, scale_filter, validate_formats
 
 
 def digest(path: Path) -> str:
@@ -340,7 +340,9 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Choose compact or editing profile")
     if not config.get("samples"):
         raise ValueError("Select at least one sample")
-    validate_formats(config)
+    variants = format_variants(config)
+    for variant in variants:
+        validate_formats({**config, **variant})
     if not 0 < float(config.get("target_vmaf", 95)) <= 100:
         raise ValueError("VMAF target must be in (0,100]")
     if (
@@ -364,7 +366,7 @@ def validate_config(config: dict[str, Any]) -> None:
         options(
             name,
             int(quality),
-            "yuv420p" if config["pixel_format"] == "source" else config["pixel_format"],
+            "yuv420p" if variants[0]["pixel_format"] == "source" else variants[0]["pixel_format"],
         )
 
 
@@ -479,23 +481,42 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     repeats = 1 if config["mode"] == "quick" else 3
     result["status"] = "running"
     save(result_path, result)
-    for index, sample in enumerate(config["samples"]):
+    experiment_config = config
+    variants = format_variants(config)
+    print(f"Format combinations: {', '.join(v['label'] for v in variants)}", flush=True)
+    print(
+        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes} tuning trials; adaptive tuning may stop earlier.",
+        flush=True,
+    )
+    for variant, index, sample in (
+        (variant, index, sample)
+        for variant in variants
+        for index, sample in enumerate(experiment_config["samples"])
+    ):
+        config = {**experiment_config, **variant}
+        variant_id = variant["id"]
         path = Path(sample["path"]).resolve()
         sample_id = f"sample-{index + 1}"
-        directory = output / sample_id
-        directory.mkdir(exist_ok=True)
+        directory = (
+            output / variant_id / sample_id
+            if "variants" in experiment_config
+            else output / sample_id
+        )
+        directory.mkdir(parents=True, exist_ok=True)
         try:
             video = inspect_source(path, float(sample["start"]), float(sample["seconds"]), ffprobe)
             target = output_video(video, config)
             pixel = target["pix_fmt"]
-            reference = directory / "reference.mkv"
+            reference_directory = output / sample_id
+            reference_directory.mkdir(exist_ok=True)
+            reference = reference_directory / "reference.mkv"
             frame_size = video["width"] * video["height"] * 4 * video["frames"]
             if (
                 not reference.exists()
                 and shutil.disk_usage(output).free < frame_size + 256 * 1024**2
             ):
                 raise ValueError("Insufficient scratch space for a lossless reference")
-            reference_identity = directory / "reference.json"
+            reference_identity = reference_directory / "reference.json"
             if reference.exists():
                 if (
                     not reference_identity.exists()
@@ -503,7 +524,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 ):
                     raise ValueError("Cached reference is unverified or changed")
             else:
-                temp_ref = directory / "reference.partial.mkv"
+                temp_ref = reference_directory / "reference.partial.mkv"
                 run(
                     [
                         ffmpeg,
@@ -546,12 +567,14 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         },
                         "seconds": video["frames"] / float(Fraction(video["fps"])),
                         "original_bps": float(video.get("bit_rate", 0)),
-                        "preview": preview(ffmpeg, reference, directory / "original.jpg"),
+                        "preview": preview(ffmpeg, reference, reference_directory / "original.jpg"),
                     }
                 )
                 save(result_path, result)
         except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
-            result["skipped"].append({"sample": sample_id, "reason": str(error)})
+            result["skipped"].append(
+                {"sample": sample_id, "variant": variant_id, "reason": str(error)}
+            )
             save(result_path, result)
             continue
         # Screen every configured installed implementation before spending the tuning budget.
@@ -582,7 +605,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             if time.monotonic() - started >= budget:
                 break
             if any(
-                row["sample"] == sample_id and row["encoder"] == encoder
+                row["sample"] == sample_id
+                and row.get("variant", "legacy") == variant_id
+                and row["encoder"] == encoder
                 for row in result["screening"]
             ):
                 continue
@@ -590,6 +615,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 result["skipped"].append(
                     {
                         "sample": sample_id,
+                        "variant": variant_id,
                         "encoder": encoder,
                         "reason": "Not present in FFmpeg build",
                     }
@@ -635,6 +661,8 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         "sample": sample_id,
                         "encoder": encoder,
                         "quality": quality,
+                        "variant": variant_id,
+                        "stage": "tuning",
                         "encode_seconds": elapsed,
                         "bytes": screen_output.stat().st_size,
                         "output": str(screen_output),
@@ -648,10 +676,15 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         "sample": sample_id,
                         "encoder": encoder,
                         "reason": "Screen failed: " + str(error),
+                        "variant": variant_id,
                     }
                 )
             save(result_path, result)
-        screens = [row for row in result["screening"] if row["sample"] == sample_id]
+        screens = [
+            row
+            for row in result["screening"]
+            if row["sample"] == sample_id and row.get("variant", "legacy") == variant_id
+        ]
         # A short screen is only a heuristic: favor near-target quality, then storage/time.
         screens.sort(
             key=lambda row: (
@@ -668,6 +701,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 result["skipped"].append(
                     {
                         "sample": sample_id,
+                        "variant": variant_id,
                         "encoder": encoder,
                         "reason": "Not present in FFmpeg build",
                     }
@@ -679,7 +713,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             metrics: dict[str, Any]
             try:
                 for attempt in range(passes):
-                    key = f"{sample_id}-{encoder}-q{quality}"
+                    key = f"{variant_id}-tuning-{sample_id}-{encoder}-q{quality}"
                     previous = next((t for t in result["trials"] if t["id"] == key), None)
                     if previous:
                         metrics = previous
@@ -754,6 +788,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                             "id": key,
                             "sample": sample_id,
                             "encoder": encoder,
+                            "variant": variant_id,
+                            "variant_label": variant["label"],
+                            "stage": "tuning",
                             "quality": quality,
                             "pixel_format": pixel,
                             "width": target["width"],
@@ -782,7 +819,12 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         break
             except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
                 result["skipped"].append(
-                    {"sample": sample_id, "encoder": encoder, "reason": str(error)}
+                    {
+                        "sample": sample_id,
+                        "variant": variant_id,
+                        "encoder": encoder,
+                        "reason": str(error),
+                    }
                 )
                 save(result_path, result)
         if time.monotonic() - started >= budget:
