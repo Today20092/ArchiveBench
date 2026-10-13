@@ -18,6 +18,7 @@ from .core import (
     validate_output,
 )
 from .encoders import SPECS, options
+from .formats import output_video, retention, scale_filter, validate_formats
 
 EXTENSIONS = {".mov", ".mp4", ".mkv", ".mxf", ".avi", ".mts", ".m2ts", ".webm", ".m4v"}
 
@@ -61,22 +62,111 @@ def candidates(root: Path) -> list[Path]:
 
 
 def validate_settings(settings: dict[str, Any]) -> None:
-    if settings.get("version") != 1 or settings.get("type") != "archive-settings":
+    if settings.get("version") not in (1, 2) or settings.get("type") != "archive-settings":
         raise ValueError("Export archive settings from a benchmark report")
-    if settings.get("encoder") not in SPECS or settings.get("pixel_format") not in (
-        "yuv420p",
-        "yuv420p10le",
-        "yuv422p10le",
-    ):
+    if settings.get("encoder") not in SPECS:
         raise ValueError("Unsupported archive format")
-    options(settings["encoder"], int(settings["quality"]), settings["pixel_format"])
+    validate_formats(settings)
+    options(
+        settings["encoder"],
+        int(settings["quality"]),
+        "yuv420p" if settings["pixel_format"] == "source" else settings["pixel_format"],
+    )
     if not 0.1 <= float(settings.get("minimum_saving", 0.1)) < 1:
         raise ValueError("Minimum saving must be at least 10%")
-    if (
-        settings.get("drop_audio_tracks", [3, 4]) != [3, 4]
-        or settings.get("audio_kbps_per_channel", 192) != 192
-    ):
-        raise ValueError("Starter runner supports dropping audio 3/4 and AAC 192 kbps/channel")
+
+
+def retained_audio(info: dict[str, Any], policy: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        s
+        for i, s in enumerate((s for s in info["streams"] if s["codec_type"] == "audio"), 1)
+        if policy["audio_mode"] != "none" and i not in policy["drop_audio_tracks"]
+    ]
+
+
+def verify_retention(
+    original: dict[str, Any],
+    encoded: dict[str, Any],
+    source: Path,
+    output: Path,
+    policy: dict[str, Any],
+    ffmpeg: str,
+) -> None:
+    def tags(src: dict[str, Any], dst: dict[str, Any]) -> None:
+        # Muxers regenerate duration/encoder and bitrate statistics, not user metadata.
+        ignored = {"encoder", "duration", "bps", "number_of_frames", "number_of_bytes"}
+        actual = {k.lower(): v for k, v in dst.get("tags", {}).items()}
+        for key, value in src.get("tags", {}).items():
+            if key.lower() in ignored or key.lower().startswith("_statistics_"):
+                continue
+            if actual.get(key.lower()) != value:
+                raise ValueError(f"Archive metadata mismatch: {key}")
+
+    def payload(path: Path, index: int) -> str:
+        return run(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-nostdin",
+                "-i",
+                str(path),
+                "-map",
+                f"0:{index}",
+                "-c",
+                "copy",
+                "-f",
+                "hash",
+                "-hash",
+                "sha256",
+                "-",
+            ],
+            86400,
+        ).strip()
+
+    for kind in ("audio", "subtitle", "attachment"):
+        source_streams = [s for s in original["streams"] if s["codec_type"] == kind]
+        if kind == "audio":
+            source_streams = retained_audio(original, policy)
+        elif policy[kind + "s"] == "drop":
+            source_streams = []
+        outputs = [s for s in encoded["streams"] if s["codec_type"] == kind]
+        if len(outputs) != len(source_streams):
+            raise ValueError(f"Archive {kind} selection mismatch")
+        for src, dst in zip(source_streams, outputs):
+            copied = kind != "audio" or policy["audio_mode"] == "copy"
+            codec = src.get("codec_name") if copied else "aac"
+            if dst.get("codec_name") != codec:
+                raise ValueError(f"Archive {kind} codec mismatch")
+            if any(
+                bool(dst.get("disposition", {}).get(k)) != bool(v)
+                for k, v in src.get("disposition", {}).items()
+            ):
+                raise ValueError(f"Archive {kind} disposition mismatch")
+            if kind == "audio" and any(
+                dst.get(k) != src.get(k) for k in ("channels", "sample_rate")
+            ):
+                raise ValueError("Archive audio channel/sample-rate mismatch")
+            if copied:
+                if kind == "attachment":
+                    if not src.get("extradata_hash") or src["extradata_hash"] != dst.get(
+                        "extradata_hash"
+                    ):
+                        raise ValueError("Archive attachment content mismatch")
+                elif payload(source, src["index"]) != payload(output, dst["index"]):
+                    raise ValueError(f"Archive copied {kind} content mismatch")
+            if policy["metadata"] == "copy":
+                tags(src, dst)
+    if policy["metadata"] == "copy":
+        tags(original["format"], encoded["format"])
+        tags(primary(original), primary(encoded))
+        chapters, outputs = original.get("chapters", []), encoded.get("chapters", [])
+        if len(chapters) != len(outputs):
+            raise ValueError("Archive chapter count mismatch")
+        for src, dst in zip(chapters, outputs):
+            if any(abs(float(src[k]) - float(dst[k])) > 0.002 for k in ("start_time", "end_time")):
+                raise ValueError("Archive chapter timing mismatch")
+            tags(src, dst)
 
 
 def verify_archive(
@@ -85,23 +175,16 @@ def verify_archive(
     original = probe(source, ffprobe)
     video = primary(original)
     video["fps"] = video["avg_frame_rate"]
-    validate_output(output, video, settings["encoder"], settings["pixel_format"], ffprobe)
+    target = output_video(video, settings)
+    validate_output(output, target, settings["encoder"], target["pix_fmt"], ffprobe)
     encoded = probe(output, ffprobe)
     if abs(float(original["format"]["duration"]) - float(encoded["format"]["duration"])) > 0.5:
         raise ValueError("Archive duration mismatch")
-    retained = [
-        s
-        for i, s in enumerate([s for s in original["streams"] if s["codec_type"] == "audio"], 1)
-        if i not in (3, 4)
-    ]
-    audio = [s for s in encoded["streams"] if s["codec_type"] == "audio"]
-    if len(audio) != len(retained) or any(
-        out["codec_name"] != "aac"
-        or out["channels"] != src["channels"]
-        or out["sample_rate"] != src["sample_rate"]
-        for out, src in zip(audio, retained)
-    ):
-        raise ValueError("Archive audio selection/format mismatch")
+    policy = retention(settings)
+    # Existing v1 jobs predate metadata checks; preserve their cleanup contract.
+    if settings["version"] == 1:
+        policy = {**policy, "metadata": "drop"}
+    verify_retention(original, encoded, source, output, policy, ffmpeg)
 
     def count(path: Path) -> int:
         return int(
@@ -167,6 +250,17 @@ def archive(
     print(
         f"Review list: {len(files)} files. Encoder: {settings['encoder']}; originals remain intact."
     )
+    policy = retention(settings)
+    print(
+        json.dumps(
+            {
+                "pixel_format": settings["pixel_format"],
+                "resolution": settings.get("resolution", "original"),
+                "container": "MKV",
+                **policy,
+            }
+        )
+    )
     for path in files:
         print(path.relative_to(source_root))
     if not execute:
@@ -228,8 +322,15 @@ def archive(
                 save(manifest_path, manifest)
             info = probe(path, ffprobe)
             video = inspect_source(path, 0, min(1, float(info["format"]["duration"])), ffprobe)
-            if any(s["codec_type"] in ("subtitle", "attachment") for s in info["streams"]):
-                raise ValueError("Subtitle/attachment preservation needs custom settings")
+            target = output_video(video, settings)
+            if any(
+                s["codec_type"] not in ("video", "audio", "subtitle", "attachment")
+                or s.get("disposition", {}).get("attached_pic")
+                for s in info["streams"]
+            ):
+                raise ValueError(
+                    "Data/unknown streams or cover art need a tested preservation path; refusing to omit them"
+                )
             output.parent.mkdir(parents=True, exist_ok=True)
             if not output.exists():
                 temporary = safe(output.with_name(output.name + ".partial.mkv"), output_root)
@@ -243,33 +344,49 @@ def archive(
                     "-i",
                     str(path),
                     "-map",
-                    "0:v:0",
+                    f"0:{video['index']}",
                 ]
-                retained = [
-                    s
-                    for i, s in enumerate(
-                        [s for s in info["streams"] if s["codec_type"] == "audio"], 1
-                    )
-                    if i not in (3, 4)
-                ]
+                retained = retained_audio(info, policy)
                 for stream in retained:
                     args += ["-map", f"0:{stream['index']}"]
+                for kind, spec in (("subtitles", "s"), ("attachments", "t")):
+                    if policy[kind] == "copy":
+                        args += ["-map", f"0:{spec}?", f"-c:{spec}", "copy"]
+                if policy["metadata"] == "drop":
+                    for spec in ("v", "a", "s"):
+                        args += [f"-map_metadata:s:{spec}", "-1"]
+                mapped = [video, *retained]
+                for kind in ("subtitle", "attachment"):
+                    if policy[kind + "s"] == "copy":
+                        mapped += [s for s in info["streams"] if s["codec_type"] == kind]
+                for i, stream in enumerate(mapped):
+                    flags = "+".join(k for k, v in stream.get("disposition", {}).items() if v)
+                    args += [f"-disposition:{i}", flags or "0"]
                 args += [
                     "-map_metadata",
-                    "0",
+                    "0" if policy["metadata"] == "copy" else "-1",
                     "-map_chapters",
-                    "0",
+                    "0" if policy["metadata"] == "copy" else "-1",
                     "-fps_mode",
                     "passthrough",
-                    *options(settings["encoder"], settings["quality"], settings["pixel_format"]),
+                    *options(
+                        settings["encoder"],
+                        settings["quality"],
+                        target["pix_fmt"],
+                        scale_filter(video, target),
+                    ),
                     "-g",
                     str(round(float(Fraction(video["fps"])) * 8)),
                     *color_args(video),
                     "-c:a",
-                    "aac",
+                    "aac" if policy["audio_mode"] == "aac" else "copy",
                 ]
-                for i, stream in enumerate(retained):
-                    args += [f"-b:a:{i}", f"{stream['channels'] * 192}k"]
+                if policy["audio_mode"] == "aac":
+                    for i, stream in enumerate(retained):
+                        args += [
+                            f"-b:a:{i}",
+                            f"{stream['channels'] * policy['audio_kbps_per_channel']}k",
+                        ]
                 args += ["-f", "matroska", str(temporary)]
                 print(f"Encoding: {path.name}", flush=True)
                 run(args, 86400)

@@ -148,6 +148,14 @@ def test_real_benchmark_resume_report_and_archive(tmp_path):
         "ffmpeg", reference, reference, sample["video"], "yuv420p10le", calibration_dir, 1, 60
     )
     assert calibrated["vmaf"] >= 99.9 and calibrated["ssim"] == 1
+    assert len(calibrated["vmaf_frames"]) == sample["video"]["frames"]
+    assert calibrated["vmaf_frames"][0]["seconds"] == 0
+    assert calibrated["vmaf_frames"][1]["seconds"] == pytest.approx(1 / 30)
+    assert sum(frame["vmaf"] for frame in calibrated["vmaf_frames"]) / len(
+        calibrated["vmaf_frames"]
+    ) == pytest.approx(calibrated["vmaf"], abs=0.00001)
+    frames = result["trials"][0]["vmaf_frames"]
+    assert frames[1]["seconds"] == pytest.approx(2 / 30)
     assert len(benchmark(config_path, tmp_path / "bench")["trials"]) == len(result["trials"])
     config["samples"] = [
         {"path": str(source), "label": "Synthetic motion", "start": 0.1, "seconds": 1}
@@ -156,13 +164,13 @@ def test_real_benchmark_resume_report_and_archive(tmp_path):
     with pytest.raises(ValueError, match="changed"):
         benchmark(config_path, tmp_path / "bench")
     report = write_report(result, tmp_path / "bench")
-    assert "__RESULTS__" not in report.read_text()
-    assert "https://" not in report.read_text().split('<script id="data"')[0]
+    assert "__RESULTS__" not in report.read_text(encoding="utf-8")
+    assert '<script src="http' not in report.read_text(encoding="utf-8")
     assert str(source) not in json.dumps(public_result(result))
     assert public_result(result)["config"]["samples"][0]["path"] == "[local source]"
     assert all("output" not in row for row in public_result(result)["screening"])
     result["config"]["samples"][0]["label"] = "</script><script>alert(1)</script>"
-    escaped = write_report(result, tmp_path / "bench").read_text()
+    escaped = write_report(result, tmp_path / "bench").read_text(encoding="utf-8")
     assert "</script><script>alert(1)</script>" not in escaped
     settings = {
         "version": 1,
@@ -175,6 +183,23 @@ def test_real_benchmark_resume_report_and_archive(tmp_path):
         "audio_kbps_per_channel": 192,
     }
     settings_path = tmp_path / "archive-settings.json"
+    modern = {
+        **settings,
+        "version": 2,
+        "encoder": "libx264",
+        "quality": 23,
+        "pixel_format": "source",
+        "audio_mode": "aac",
+        "audio_kbps_per_channel": 96,
+        "drop_audio_tracks": [],
+    }
+    save(settings_path, modern)
+    archive(source_root, tmp_path / "modern", settings_path, True)
+    modern_manifest = json.loads(
+        (tmp_path / "modern/archive-manifest.json").read_text(encoding="utf-8")
+    )
+    assert modern_manifest["records"][0]["status"] == "verified"
+    assert digest(source) == original_hash
     save(settings_path, settings)
     archived = tmp_path / "archive"
     archive(source_root, archived, settings_path, False)

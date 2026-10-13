@@ -38,6 +38,9 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "encoder",
         "quality",
         "pixel_format",
+        "width",
+        "height",
+        "resolution",
         "vmaf",
         "vmaf_p5",
         "ssim",
@@ -52,6 +55,7 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "# ArchiveBench results",
         "",
         f"Status: {result['status']}",
+        f"Video format: {result['config']['pixel_format']}; resolution: {result['config'].get('resolution', 'original')}",
         "",
         "VMAF is a model score, not a percentage of original quality. Compare within one format group.",
         "",
@@ -68,6 +72,7 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
             "Measured encoding excludes scoring, previews, hashes and archive verification.",
             "Duration projections are linear estimates from short samples; audio is excluded.",
             "Original 4:2:2 chroma is normalized for scoring a 4:2:0 output; VMAF does not quantify lost chroma detail.",
+            "Reduced-resolution outputs are upscaled to the original dimensions for scoring; references are not downscaled.",
             f"Skipped/failed configurations: {len(result['skipped'])}.",
         ]
     )

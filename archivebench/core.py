@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .encoders import SPECS, discover, options
+from .formats import output_video, scale_filter, validate_formats
 
 
 def digest(path: Path) -> str:
@@ -49,7 +50,21 @@ def run(args: list[str], timeout: float = 120) -> str:
 
 def probe(path: Path, ffprobe: str = "ffprobe") -> dict[str, Any]:
     return json.loads(
-        run([ffprobe, "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)])
+        run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-show_chapters",
+                "-show_data_hash",
+                "sha256",
+                "-of",
+                "json",
+                str(path),
+            ]
+        )
     )
 
 
@@ -106,7 +121,11 @@ def inspect_source(path: Path, start: float, seconds: float, ffprobe: str) -> di
         for frame in frames
         if "best_effort_timestamp_time" in frame
     ]
-    if any(abs(b - a - float(1 / fps)) > 0.0002 for a, b in zip(stamps, stamps[1:])):
+    # Container timestamps can be coarser than a frame interval (e.g. MKV milliseconds).
+    timestamp_tolerance = min(
+        float(1 / fps) / 2, max(0.0002, float(Fraction(video.get("time_base", "1/1000000"))))
+    )
+    if any(abs(b - a - float(1 / fps)) > timestamp_tolerance for a, b in zip(stamps, stamps[1:])):
         raise ValueError("Variable frame timestamps detected")
     if len(stamps) < 2:
         raise ValueError("Insufficient frame timestamps")
@@ -140,6 +159,7 @@ def encode_args(
     quality: int,
     pixel_format: str,
     video: dict[str, Any],
+    target: dict[str, Any] | None = None,
 ) -> list[str]:
     return [
         ffmpeg,
@@ -153,7 +173,7 @@ def encode_args(
         "-i",
         str(source),
         "-map",
-        "0:v:0",
+        f"0:{video['index']}",
         "-an",
         "-sn",
         "-dn",
@@ -161,7 +181,7 @@ def encode_args(
         str(frames),
         "-fps_mode",
         "passthrough",
-        *options(encoder, quality, pixel_format),
+        *options(encoder, quality, pixel_format, scale_filter(video, target or video)),
         "-g",
         str(max(1, round(float(Fraction(video["fps"])) * 8))),
         *color_args(video),
@@ -182,6 +202,17 @@ def validate_output(
         raise ValueError("Encoder did not preserve requested codec/bit depth/chroma")
     if Fraction(output["avg_frame_rate"]) != Fraction(video["fps"]):
         raise ValueError("Output frame rate mismatch")
+    aspect = video.get("display_aspect_ratio")
+    if aspect and aspect not in ("0:1", "N/A"):
+        actual = output.get("display_aspect_ratio", "0:1")
+        if (
+            abs(
+                float(Fraction(aspect.replace(":", "/")))
+                - float(Fraction(actual.replace(":", "/")))
+            )
+            > 0.001
+        ):
+            raise ValueError("Output display aspect ratio mismatch")
     for key in ("color_range", "color_space", "color_transfer", "color_primaries"):
         if video.get(key) not in (None, "unknown", "unspecified") and output.get(key) != video[key]:
             raise ValueError(f"Output {key} mismatch")
@@ -197,13 +228,16 @@ def score(
     subsample: int,
     timeout: float,
     ffprobe: str = "ffprobe",
-) -> dict[str, float]:
+) -> dict[str, Any]:
     fps = Fraction(video["fps"])
     pts = f"settb=AVTB,setpts=N*{fps.denominator}/({fps.numerator}*TB),format={pixel_format}"
     model = "vmaf_4k_v0.6.1" if video["width"] >= 3840 else "vmaf_v0.6.1"
     metric_path = directory / "vmaf.json"
+    # Upscale the candidate, not the reference, so scores include downscaling loss.
+    upscale = scale_filter(primary(probe(encoded, ffprobe)), video)
+    distorted = (upscale + "," if upscale else "") + pts
     metric_filter = (
-        f"[0:v]{pts},split=2[d][ds];[1:v]{pts},split=2[r][rs];"
+        f"[0:v]{distorted},split=2[d][ds];[1:v]{pts},split=2[r][rs];"
         f"[d][r]libvmaf=model=version={model}:log_fmt=json:log_path=vmaf.json:"
         f"n_threads=4:n_subsample={subsample}[v];[ds][rs]ssim[s]"
     )
@@ -269,6 +303,13 @@ def score(
         "vmaf": data["pooled_metrics"]["vmaf"]["mean"],
         "vmaf_p5": scores[max(0, int(len(scores) * 0.05) - 1)],
         "ssim": float(ssim.group(1)),
+        "vmaf_frames": [
+            {
+                "seconds": float(Fraction(frame["frameNum"], 1) / fps),
+                "vmaf": frame["metrics"]["vmaf"],
+            }
+            for frame in data["frames"]
+        ],
     }
 
 
@@ -299,8 +340,7 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Choose compact or editing profile")
     if not config.get("samples"):
         raise ValueError("Select at least one sample")
-    if config.get("pixel_format") not in ("yuv420p", "yuv420p10le", "yuv422p10le"):
-        raise ValueError("Choose 8-bit 420, 10-bit 420 or 10-bit 422")
+    validate_formats(config)
     if not 0 < float(config.get("target_vmaf", 95)) <= 100:
         raise ValueError("VMAF target must be in (0,100]")
     if (
@@ -321,7 +361,11 @@ def validate_config(config: dict[str, Any]) -> None:
     if not 0 <= float(config.get("tolerance", 0.5)) <= 5:
         raise ValueError("VMAF tolerance must be between 0 and 5")
     for name, quality in config.get("quality_overrides", {}).items():
-        options(name, int(quality), config["pixel_format"])
+        options(
+            name,
+            int(quality),
+            "yuv420p" if config["pixel_format"] == "source" else config["pixel_format"],
+        )
 
 
 def benchmark(config_path: Path, output: Path) -> dict[str, Any]:
@@ -394,6 +438,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "adapters": SPECS,
             "runner_sha256": digest(Path(__file__)),
             "adapters_sha256": digest(Path(__file__).with_name("encoders.py")),
+            "formats_sha256": digest(Path(__file__).with_name("formats.py")),
             "environment": environment,
         }
     )
@@ -430,7 +475,6 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     def remaining() -> float:
         return max(0.1, budget - (time.monotonic() - started))
 
-    pixel = config["pixel_format"]
     passes = 2 if config["mode"] == "quick" else 4
     repeats = 1 if config["mode"] == "quick" else 3
     result["status"] = "running"
@@ -442,6 +486,8 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         directory.mkdir(exist_ok=True)
         try:
             video = inspect_source(path, float(sample["start"]), float(sample["seconds"]), ffprobe)
+            target = output_video(video, config)
+            pixel = target["pix_fmt"]
             reference = directory / "reference.mkv"
             frame_size = video["width"] * video["height"] * 4 * video["frames"]
             if (
@@ -470,7 +516,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         "-i",
                         str(path),
                         "-map",
-                        "0:v:0",
+                        f"0:{video['index']}",
                         "-an",
                         "-frames:v",
                         str(video["frames"]),
@@ -493,6 +539,11 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         "id": sample_id,
                         "label": sample.get("label", path.name),
                         "video": video,
+                        "output_video": {
+                            "width": target["width"],
+                            "height": target["height"],
+                            "pix_fmt": pixel,
+                        },
                         "seconds": video["frames"] / float(Fraction(video["fps"])),
                         "original_bps": float(video.get("bit_rate", 0)),
                         "preview": preview(ffmpeg, reference, directory / "original.jpg"),
@@ -562,11 +613,12 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         quality,
                         pixel,
                         video,
+                        target,
                     ),
                     min(30, remaining()),
                 )
                 elapsed = time.monotonic() - tick
-                validate_output(screen_output, video, encoder, pixel, ffprobe)
+                validate_output(screen_output, target, encoder, pixel, ffprobe)
                 measured = score(
                     ffmpeg,
                     screen_output,
@@ -654,11 +706,12 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                             quality,
                             pixel,
                             video,
+                            target,
                         )
                         pilot_started = time.monotonic()
                         run(args, min(30, remaining()))
                         pilot_seconds = time.monotonic() - pilot_started
-                        validate_output(temp, video, encoder, pixel, ffprobe)
+                        validate_output(temp, target, encoder, pixel, ffprobe)
                         print(
                             f"  Pilot estimate: {pilot_seconds * video['frames'] / probe_frames:.0f}s for this sample (includes startup; approximate)",
                             flush=True,
@@ -679,11 +732,12 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                                     quality,
                                     pixel,
                                     video,
+                                    target,
                                 ),
                                 remaining(),
                             )
                             timings.append(time.monotonic() - tick)
-                        validate_output(temp, video, encoder, pixel, ffprobe)
+                        validate_output(temp, target, encoder, pixel, ffprobe)
                         measured = score(
                             ffmpeg,
                             temp,
@@ -702,6 +756,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                             "encoder": encoder,
                             "quality": quality,
                             "pixel_format": pixel,
+                            "width": target["width"],
+                            "height": target["height"],
+                            "resolution": config.get("resolution", "original"),
                             "output": str(encoded),
                             "sha256": digest(encoded),
                             "bytes": encoded.stat().st_size,

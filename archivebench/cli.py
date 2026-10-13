@@ -7,9 +7,10 @@ import sys
 from pathlib import Path
 
 from .archive import archive, candidates, cleanup
-from .core import benchmark, probe, run, save
+from .core import benchmark, primary, probe, run, save, validate_config
 from .encoders import discover
 from .report import write_report
+from .formats import output_video
 
 
 def wizard(config_path: Path) -> None:
@@ -24,9 +25,25 @@ def wizard(config_path: Path) -> None:
     profile = input("Profile compact/editing [compact]: ").strip() or "compact"
     mode = input("Mode quick/thorough [quick]: ").strip() or "quick"
     pixel = (
-        input("Pixel format yuv420p/yuv420p10le/yuv422p10le [yuv420p10le]: ").strip()
-        or "yuv420p10le"
+        input(
+            "Video format: source keeps bit depth/chroma; yuv420p = 8-bit 4:2:0, yuv420p10le = 10-bit 4:2:0, yuv422p = 8-bit 4:2:2, yuv422p10le = 10-bit 4:2:2 [source]: "
+        ).strip()
+        or "source"
     )
+    resolution = (
+        input("Resolution original/2160p/1440p/1080p/720p [original, never upscale]: ").strip()
+        or "original"
+    )
+    print(
+        "The benchmark measures video only. These retention choices are saved for archive export."
+    )
+    audio_mode = input("Audio copy/aac/none [copy, keep original audio]: ").strip() or "copy"
+    drop = input("Audio track numbers to omit, comma-separated [none; keep every track]: ").strip()
+    drop_tracks = [int(number.strip()) for number in drop.split(",")] if drop else []
+    audio_rate = int(input("AAC kbps per channel [192]: ") or "192") if audio_mode == "aac" else 192
+    subtitles = input("Subtitles copy/drop [copy]: ").strip() or "copy"
+    attachments = input("Attachments copy/drop [copy]: ").strip() or "copy"
+    metadata = input("Metadata and chapters copy/drop [copy]: ").strip() or "copy"
     budget = float(input("Time budget in minutes [15]: ") or "15")
     samples = []
     for path in picked:
@@ -42,6 +59,13 @@ def wizard(config_path: Path) -> None:
         "profile": profile,
         "mode": mode,
         "pixel_format": pixel,
+        "resolution": resolution,
+        "audio_mode": audio_mode,
+        "drop_audio_tracks": drop_tracks,
+        "audio_kbps_per_channel": audio_rate,
+        "subtitles": subtitles,
+        "attachments": attachments,
+        "metadata": metadata,
         "target_vmaf": 93 if profile == "compact" else 96,
         "tolerance": 0.5,
         "budget_minutes": budget,
@@ -50,9 +74,13 @@ def wizard(config_path: Path) -> None:
     }
     if config_path.exists():
         raise ValueError("Config already exists; choose a new path")
-    from .core import validate_config
-
     validate_config(config)
+    for path in picked:
+        video = primary(probe(path))
+        target = output_video(video, config)
+        print(
+            f"{path.name}: {video['width']}x{video['height']} {video['pix_fmt']} -> {target['width']}x{target['height']} {target['pix_fmt']}"
+        )
     save(config_path, config)
     print(
         f"Saved {config_path}. Review it, then run: archivebench benchmark {config_path} --output runs/my-test"

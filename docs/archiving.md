@@ -1,0 +1,45 @@
+# Archive files and review cleanup
+
+[Back to the README](../README.md) · [Configuration and retention options](configuration.md)
+
+## Review the settings
+
+Select a measured configuration in the report and click **Export archive settings**. Inspect the saved clips at native size and test any grading or editing workflow you need before running a full batch.
+
+The exported settings carry the video format, resolution and retention choices selected during setup. Audio and other streams are excluded from benchmark size/time measurements. The runner writes MKV. It cannot guarantee proprietary metadata or editor relinking; test that compatibility separately.
+
+The [configuration reference](configuration.md) describes retention defaults, optional AAC conversion and track removal, supported streams, verification and version 1 manifest behavior. Unsupported streams stop the job rather than being silently omitted.
+
+## Encode a batch
+
+First review the eligible files and settings. This command does not encode:
+
+```powershell
+uv run archivebench archive --source D:\Project\Originals --output E:\Project\Archived --settings archive-settings.json
+```
+
+After reviewing that list, explicitly execute the batch:
+
+```powershell
+uv run archivebench archive --source D:\Project\Originals --output E:\Project\Archived --settings archive-settings.json --execute
+```
+
+Originals remain in place. The runner validates outputs before marking them verified. Encodes saving less than 10% are discarded; originals stay intact. A batch failure stops the run and leaves its checkpoint for inspection or restart. Rerun with the same source, output and settings to continue. See [lock-file handling](benchmark.md#restart-and-budgets) after an abrupt shutdown.
+
+## Review and remove originals
+
+**Cleanup permanently deletes the listed originals.** Run it only after visual review and an explicit decision to remove those files. Benchmarking or encoding alone is not permission to delete them.
+
+Preview the cleanup list first:
+
+```powershell
+uv run archivebench cleanup --output E:\Project\Archived
+```
+
+Only after reviewing the encoded clips and the list:
+
+```powershell
+uv run archivebench cleanup --output E:\Project\Archived --execute --reviewed
+```
+
+Cleanup requires matching source/output hashes, at least 10% actual savings, audio/video and retention validation, and full decode checks. It validates the whole selection before deleting any original and rechecks hashes before each deletion. The archive runner never deletes originals while encoding.

@@ -46,7 +46,7 @@ def discover(text: str) -> tuple[list[str], list[str]]:
     return supported, unconfigured
 
 
-def options(encoder: str, quality: int, pixel_format: str) -> list[str]:
+def options(encoder: str, quality: int, pixel_format: str, scale: str = "") -> list[str]:
     if encoder not in SPECS:
         raise ValueError(f"Unconfigured encoder: {encoder}")
     _, _, low, high, controls = SPECS[encoder]
@@ -57,13 +57,17 @@ def options(encoder: str, quality: int, pixel_format: str) -> list[str]:
         args += ["-qp_p", str(quality)]
     if encoder.endswith("_vaapi"):
         # Probe the actual device rather than claiming support from the encoder listing.
+        if pixel_format not in ("yuv420p", "yuv420p10le"):
+            raise ValueError("VAAPI adapter supports only 8/10-bit 4:2:0")
         hardware_format = "p010le" if "10" in pixel_format else "nv12"
         args += [
             "-vaapi_device",
             "/dev/dri/renderD128",
             "-vf",
-            f"format={hardware_format},hwupload",
+            (scale + "," if scale else "") + f"format={hardware_format},hwupload",
         ]
     else:
         args += ["-pix_fmt", pixel_format]
+        if scale:
+            args += ["-vf", scale]
     return args

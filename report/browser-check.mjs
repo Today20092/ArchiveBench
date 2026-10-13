@@ -1,31 +1,140 @@
 import { chromium } from '@playwright/test';
-import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
+import { readFile, mkdir } from 'node:fs/promises';
 
-const browser = await chromium.launch({headless:true,executablePath:process.env.ARCHIVEBENCH_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
-const page = await browser.newPage();
-const failures=[];const requests=[];
-page.on('pageerror',error=>failures.push(error.message));
-page.on('request',request=>{if(/^https?:/.test(request.url()))requests.push(request.url());});
-await page.goto(pathToFileURL(resolve(process.argv[2] || 'runs/demo/benchmark/report.html')).href);
-await page.waitForFunction(()=>window.__archivebench);
-await page.setViewportSize({width:1280,height:1100});await page.screenshot({path:'runs/demo/report-preview.png',fullPage:true});
-assert.equal(await page.locator('#rows tr').count()>0,true);
-assert.equal(await page.locator('.chart svg').count(),2);
-const before=await page.locator('#metrics').innerText();
-await page.locator('#duration').selectOption('10');
-assert.notEqual(await page.locator('#metrics').innerText(),before);
-await page.locator('#target').fill('100');
-assert.match(await page.locator('#recommendation').innerText(),/No measured configuration/);
-await page.locator('#rows .pick').last().click();
-await page.locator('#theme').click();
-await page.locator('#divider').fill('25');
-assert.match(await page.locator('#wipe-original').getAttribute('style'),/75%/);
-const downloadEvent=page.waitForEvent('download');await page.locator('#export').click();
-const download=await downloadEvent;assert.equal(download.suggestedFilename(),'archive-settings.json');
-await page.setViewportSize({width:1280,height:1100});await page.screenshot({path:'runs/demo/desktop.png',fullPage:true});
-await page.setViewportSize({width:375,height:900});await page.screenshot({path:'runs/demo/mobile.png',fullPage:true});
-assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-assert.deepEqual(failures,[]);assert.deepEqual(requests,[]);
-await browser.close();console.log('PASS: offline TanStack charts, projections, score filter, selection, theme, divider, settings export, narrow layout; no network requests.');
+// Load trusted report bytes into an isolated document, never grant browser file-system access.
+const html = await readFile(process.argv[2] || 'runs/demo/benchmark-final/report.html', 'utf8');
+const browser = await chromium.launch({headless:true, executablePath:process.env.ARCHIVEBENCH_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
+const context = await browser.newContext({offline:true, acceptDownloads:true});
+const page = await context.newPage(), failures = [], requests = [];
+page.on('pageerror', error => failures.push(error.message));
+page.on('request', request => {if (/^https?:/.test(request.url())) requests.push(request.url());});
+const payload = JSON.parse(html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+const load = async data => {
+  const document = html.replace(/(<script id="data" type="application\/json">)[\s\S]*?(<\/script>)/, (_, start, end) => start + JSON.stringify(data).replaceAll('<','\\u003c') + end);
+  await page.goto('about:blank');
+  await page.setContent(document);
+  await page.waitForFunction(() => window.__archivebench);
+};
+const downloadJSON = async id => {
+  const event = page.waitForEvent('download'); await page.locator(id).click();
+  const file = await event;
+  return {name:file.suggestedFilename(), data:JSON.parse(await readFile(await file.path(), 'utf8'))};
+};
+try {
+  await mkdir('runs/demo', {recursive:true});
+  await page.setViewportSize({width:1440, height:1100});
+  await load(payload);
+  assert.equal(await page.locator('.plots .chart svg').count(), 2);
+  assert.equal(await page.locator('#rows tr').count() > 0, true);
+  assert.equal(await page.locator('#ranking button').count(), await page.locator('#rows tr').count());
+  const positions = await page.evaluate(() => [document.querySelector('.plots').offsetTop, document.querySelector('#selection').offsetTop, document.querySelector('#ranking').offsetTop]);
+  assert.ok(positions[0] < positions[1] && positions[1] < positions[2], 'tradeoff charts must precede decisions and details');
+  assert.equal(await page.locator('#evidence').getAttribute('open'), null);
+  const saved = await page.locator('#saved-conclusion').textContent();
+  await page.locator('#pin').click();
+  const baseline = await page.locator('#selected-title').textContent();
+  await page.locator('#ranking button[aria-pressed="false"]').first().click();
+  assert.match(await page.locator('#comparison').innerText(), /encoding time/);
+  assert.ok((await page.locator('#comparison').innerText()).includes(baseline));
+  assert.equal(await page.locator('#rows .selected .pick').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#rows .pinned').count(), 1);
+  await page.locator('#quality-chart circle').first().hover();
+  await page.waitForFunction(() => [...document.querySelectorAll('.benchmark-tooltip')].some(el => el.textContent.includes('Projected')));
+  await page.locator('#quality-chart circle').first().click();
+  assert.equal(await page.locator('#ranking [aria-pressed="true"]').count(), 1);
+  await page.locator('#color-mode').selectOption('hardware');
+  assert.match(await page.locator('#color-key').innerText(), /CPU \/ GPU/);
+  const legend = page.locator('.chart-legend').first().locator('button').first();
+  await legend.click(); assert.equal(await legend.getAttribute('aria-pressed'), 'false');
+  await legend.click();
+  await page.locator('#duration').selectOption('10');
+  assert.match(await page.locator('#metrics').innerText(), /10 min footage/);
+  await page.locator('.limits > summary').click();
+  await page.locator('#low-target').fill('100');
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  await page.locator('#low-target').fill('');
+  await page.locator('#max-time').fill('0.1');
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  await page.locator('#reset').click();
+  assert.equal(await page.locator('#saved-conclusion').textContent(), saved);
+  await page.locator('#target').fill('100');
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  await page.locator('#reset').click();
+  await page.locator('#rank-by').selectOption('minutes');
+  await page.locator('#sort-by').selectOption('minutes');
+  assert.equal(await page.locator('#ranking button').first().getAttribute('data-id'), await page.locator('#rows .pick').first().getAttribute('data-id'));
+  await page.locator('#evidence > summary').click();
+  assert.match(await page.locator('#format-summary').innerText(), /Source:.*Output:/);
+  assert.match(await page.locator('#frame-note').innerText(), /not saved|scored frames/);
+  await page.locator('#divider').fill('25');
+  assert.match(await page.locator('#wipe-original').getAttribute('style'), /75%/);
+  await page.locator('#reviewed').check();
+  assert.match(await page.locator('#selection-status').innerText(), /1\/1 samples marked visually reviewed/);
+  const settings = await downloadJSON('#export');
+  assert.equal(settings.name, 'archive-settings.json');
+  assert.equal(settings.data.version, 2); assert.equal(settings.data.audio_mode, payload.config.audio_mode ?? 'copy');
+  const decision = await downloadJSON('#export-decision');
+  assert.equal(decision.name, 'archive-decision.json');
+  assert.equal(decision.data.selected.samples[0].visually_reviewed, true);
+  assert.deepEqual(decision.data.outstanding_review, []);
+  assert.equal(decision.data.saved_mean_target, payload.config.target_vmaf);
+  await page.locator('#evidence > summary').click();
+  await page.screenshot({path:'runs/demo/chart-first-dark.png', fullPage:true});
+  await page.locator('#theme').click();
+  await page.screenshot({path:'runs/demo/chart-first-light.png', fullPage:true});
+  for (const width of [375, 760, 900, 1280]) {
+    await page.setViewportSize({width, height:1000});
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `no page overflow at ${width}px`);
+  }
+  await page.setViewportSize({width:375, height:900});
+  await page.screenshot({path:'runs/demo/chart-first-mobile.png', fullPage:true});
+  await page.evaluate(() => {document.documentElement.style.fontSize = '200%';});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await page.evaluate(() => {document.documentElement.style.fontSize = '';});
+  await page.keyboard.press('Tab');
+  await page.locator('#theme').focus();
+  assert.equal(await page.locator('#theme').evaluate(el => el.matches(':focus-visible')), true);
+
+  // Deliberately uneven sample lengths, a failing mean, and missing coverage.
+  const multi = structuredClone(payload), first = payload.trials[0];
+  multi.config.samples = [{label:'First'},{label:'Second'}];
+  multi.samples = [{...payload.samples[0], id:'one', label:'First', seconds:10}, {...payload.samples[0], id:'two', label:'Second', seconds:30}];
+  multi.trials = [
+    {...first,id:'a-one',sample:'one',encoder:'libx265',quality:24,vmaf:99,vmaf_p5:94,bytes:100,encode_seconds:10,vmaf_frames:[{seconds:0,vmaf:99},{seconds:1,vmaf:90}]},
+    {...first,id:'a-two',sample:'two',encoder:'libx265',quality:24,vmaf:91,vmaf_p5:80,bytes:600,encode_seconds:90,vmaf_frames:[{seconds:0,vmaf:93},{seconds:1,vmaf:89}]},
+    {...first,id:'b-one',sample:'one',encoder:'libx265',quality:28,vmaf:95,vmaf_p5:92,bytes:50,encode_seconds:5},
+  ];
+  multi.config.target_vmaf = 93;
+  await load(multi);
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  assert.match(await page.locator('#rows').innerText(), /Incomplete: 1\/2 samples/);
+  await page.locator('#pin').click();
+  await page.locator('#ranking button[aria-pressed="false"]').first().click();
+  assert.match(await page.locator('#comparison').innerText(), /different samples/);
+  await page.locator('#rows .pick').filter({hasText:'CRF 24'}).click();
+  await page.locator('#evidence > summary').click();
+  assert.equal(await page.locator('#frame-chart svg').count(), 1);
+  await page.locator('#weak-moments button').first().click();
+  assert.match(await page.locator('#cursor-time').innerText(), /1.00 seconds/);
+  await page.locator('#review-sample').selectOption('two');
+  assert.match(await page.locator('#detail-title').innerText(), /Second/);
+  assert.equal(await page.locator('#reviewed').isChecked(), false);
+  await page.locator('#sample').selectOption('one');
+  assert.match(await page.locator('#recommendation').innerText(), /Qualifying measured/);
+  assert.match(await page.locator('#scope-note').innerText(), /does not qualify/);
+
+  const hostile = structuredClone(multi);
+  hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';
+  await load(hostile);
+  await page.locator('#evidence > summary').click();
+  assert.equal(await page.locator('#sample-evidence img').count(), 0);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  const empty = structuredClone(payload); empty.trials = []; empty.samples = [];
+  await load(empty);
+  assert.equal(await page.locator('#export').isVisible(), false);
+  assert.equal(await page.locator('#rows tr').count(), 0);
+  assert.match(await page.locator('#time-chart').innerText(), /No measurements/);
+  assert.deepEqual(failures, []); assert.deepEqual(requests, []);
+  console.log('PASS: offline charts, linked selection/pinning, honest coverage/thresholds, projections, ranking, saved conclusion, exports, review state, frame seeking, hostile labels, empty data, both themes, narrow layouts; no network requests.');
+} finally { await browser.close(); }
