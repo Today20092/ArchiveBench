@@ -24,6 +24,10 @@ $('status').textContent = result.status.replaceAll('_', ' ');
 $('target').value = result.config.target_vmaf;
 for (const sample of result.samples) $('sample').add(new Option(sample.label, sample.id));
 const sampledSeconds = result.samples.reduce((sum, sample) => sum + sample.seconds, 0);
+const sourceDurations = new Map(result.samples.filter(sample => Number.isFinite(sample.source_seconds)).map(sample => [sample.source_id ?? sample.id, sample.source_seconds]));
+const sourceMinutes = sourceDurations.size ? [...sourceDurations.values()].reduce((sum, seconds) => sum + seconds, 0) / 60 : 60;
+$('minutes').value = sourceMinutes;
+$('duration').value = 'custom';
 $('coverage').textContent = `${result.samples.length} of ${result.config.samples.length} planned samples · ${sampledSeconds.toFixed(1)} seconds sampled · ${result.trials.length} measured trials · ${result.config.mode} mode. ${result.samples.map(sample => `${sample.label} (${sample.video.width} × ${sample.video.height})`).join('; ')}`;
 $('run-limit').textContent = result.status === 'completed' ? 'Short-sample evidence. Size and time are projections; review representative footage before choosing.' : 'Partial experiment. Missing measurements cannot qualify a configuration for the whole collection.';
 $('skip-title').textContent = `Skipped or failed configurations (${result.skipped.length})`;
@@ -32,14 +36,14 @@ $('environment').textContent = JSON.stringify({environment:result.environment, i
 const savedRows = eligible(configurations(result, 60), result.config.target_vmaf);
 const savedSmallest = [...savedRows].sort((a,b) => a.gib-b.gib)[0];
 const savedFastest = [...savedRows].sort((a,b) => a.minutes-b.minutes)[0];
-$('saved-conclusion').textContent = `Saved mean target: ${result.config.target_vmaf}. ` + (savedSmallest ? `Smallest qualifying collection choice: ${label(savedSmallest)}. Fastest: ${label(savedFastest)}. Visual review remains separate.` : 'No exact configuration meets that floor on every planned sample. Per-sample results remain available for exploration.');
+$('saved-conclusion').textContent = `Saved mean target: ${result.config.target_vmaf}. ` + (savedSmallest ? `Smallest qualifying collection choice: ${label(savedSmallest)}. Fastest: ${label(savedFastest)}. Provisional tuning evidence pending fresh-footage validation. Visual review remains separate.` : 'No exact configuration meets that floor on every planned sample. Per-sample results remain available for exploration.');
 
 function optional(id, minimum, maximum = Infinity) {
   const value = $(id).value.trim();
   return value === '' ? null : Math.min(maximum, Math.max(minimum, Number(value)));
 }
 function current() {
-  const minutes = Math.min(10080, Math.max(1, Number($('minutes').value) || 60));
+  const minutes = Math.max(0.001, Number($('minutes').value) || sourceMinutes);
   const target = Math.min(100, Math.max(0, Number($('target').value) || 0));
   const lowTarget = optional('low-target', 0, 100), maxMinutes = optional('max-time', 0.1);
   const rows = configurations(result, minutes, $('sample').value);
@@ -50,7 +54,7 @@ function checkText(row, state) {
   if (row.vmaf < state.target) return 'Below mean floor';
   if (state.lowTarget !== null && (!Number.isFinite(row.vmaf_p5) || row.vmaf_p5 < state.lowTarget)) return 'Low-5% floor not met';
   if (state.maxMinutes !== null && row.minutes > state.maxMinutes) return 'Over projected time limit';
-  return 'Passes measured checks';
+  return 'Passes measured checks · provisional';
 }
 function choices(rows) {
   return {smallest:[...rows].sort((a,b) => a.gib-b.gib)[0], fastest:[...rows].sort((a,b) => a.minutes-b.minutes)[0]};
@@ -155,8 +159,8 @@ function render() {
   const minRuns = Math.min(...timingCounts), maxRuns = Math.max(...timingCounts);
   $('selection-status').textContent = `${checkText(selected, state)} · ${selected.coverage}/${selected.expected} samples measured · ${reviewCount}/${selected.expected} samples marked visually reviewed.${hiddenEncoders.has(selected.encoder) ? ' Selected encoder is hidden in the charts.' : ''}`;
   $('metrics').innerHTML = [
-    [$('sample').value ? 'Measured mean VMAF' : 'Measured weakest sample mean', number(selected.vmaf), `Low 5%: ${number(selected.vmaf_p5)} · floor: ${target}`],
-    [`Projected video · ${minutes} min footage`, `${number(selected.gib)} GiB`, 'Audio and other streams excluded'],
+    [$('sample').value ? 'Measured mean VMAF' : 'Measured weakest sample mean', number(selected.vmaf), `Weakest scene: ${result.samples.find(sample => sample.id === selected.weakest_sample)?.label ?? selected.weakest_sample} · low 5%: ${number(selected.vmaf_p5)} · floor: ${target}`],
+    [`Projected video · ${Number(minutes.toFixed(2))} min footage`, `${number(selected.gib)} GiB`, `${selected.projection_basis}. Audio and other streams excluded`],
     ['Projected encoding time', durationText(selected.minutes), `${minRuns === maxRuns ? minRuns : `${minRuns}–${maxRuns}`} timed run${maxRuns === 1 ? '' : 's'} per sample`],
   ].map(([title,value,note]) => `<div class="metric"><small>${escape(title)}</small><div class="value">${escape(value)}</div><p>${escape(note)}</p></div>`).join('');
   renderComparison(selected, baseline);
@@ -285,7 +289,7 @@ document.querySelector('.plots').addEventListener('click', event => {
 $('color-mode').addEventListener('change', () => {hiddenEncoders.clear(); render();});
 for (const id of ['sample','minutes','target','low-target','max-time','rank-by','sort-by']) $(id).addEventListener('input', () => {if (id === 'minutes') $('duration').value = 'custom'; render();});
 $('duration').addEventListener('change', () => {if ($('duration').value !== 'custom') $('minutes').value = $('duration').value; render();});
-$('reset').addEventListener('click', () => {$('target').value = result.config.target_vmaf; $('low-target').value = ''; $('max-time').value = ''; $('sample').value = ''; $('minutes').value = '60'; $('duration').value = '60'; hiddenEncoders.clear(); render();});
+$('reset').addEventListener('click', () => {$('target').value = result.config.target_vmaf; $('low-target').value = ''; $('max-time').value = ''; $('sample').value = ''; $('minutes').value = sourceMinutes; $('duration').value = 'custom'; hiddenEncoders.clear(); render();});
 document.querySelector('.quality-starts').addEventListener('click', event => {const button = event.target.closest('[data-target]'); if (button) {$('target').value = button.dataset.target; render();}});
 $('divider').addEventListener('input', () => {$('wipe-original').style.clipPath = `inset(0 ${100-Number($('divider').value)}% 0 0)`;});
 $('theme').addEventListener('click', () => {document.documentElement.classList.toggle('light'); render();});

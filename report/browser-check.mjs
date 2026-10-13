@@ -151,9 +151,23 @@ try {
   await page.locator('#rows .pick').filter({hasText:'4:2:0 comparison'}).click();
   await page.locator('#evidence > summary').click();
   const variantExport = await downloadJSON('#export');
+  assert.equal(variantExport.data.evidence_status, 'provisional');
+  assert.equal(variantExport.data.validated, false);
   assert.equal(variantExport.data.variant, '420');
   assert.equal(variantExport.data.pixel_format, 'yuv420p');
   assert.equal(variantExport.data.audio_mode, variants.config.audio_mode ?? 'copy');
+
+  const weighted = structuredClone(multi);
+  weighted.config.samples.push({label:'Another section'});
+  weighted.samples = [{...multi.samples[0], source_id:'source-1', source_seconds:100}, {...multi.samples[1], source_id:'source-1', source_seconds:100}, {...multi.samples[0],id:'three',source_id:'source-2',source_seconds:1000}];
+  weighted.trials = [multi.trials[0],multi.trials[1],{...multi.trials[0],id:'a-three',sample:'three',bytes:300,encode_seconds:20,vmaf:96}];
+  weighted.config.target_vmaf = 90;
+  await load(weighted);
+  assert.equal(Number(await page.locator('#minutes').inputValue()), 1100/60);
+  assert.match(await page.locator('#metrics').innerText(), /Weakest scene: Second/);
+  assert.match(await page.locator('#metrics').innerText(), /selected-source video-only projection/);
+  assert.match(await page.locator('#selection-status').innerText(), /3\/3 samples measured/);
+  assert.match(await page.locator('#saved-conclusion').textContent(), /Provisional/);
 
   const hostile = structuredClone(multi);
   hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';

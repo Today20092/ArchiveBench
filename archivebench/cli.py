@@ -104,7 +104,7 @@ def wizard(config_path: Path) -> None:
                 print(f"{variant['label']} / {path.name}: unsupported: {error}")
     passes, finalists = (2, 4) if mode == "quick" else (4, 8)
     print(
-        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) * finalists * passes} tuning trials. Only installed compatible encoders run, and adaptive tuning may stop earlier."
+        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) ** 2 * finalists * passes} tuning trials including shared settings on every sample. Only installed compatible encoders run, and adaptive tuning may stop earlier."
     )
     save(config_path, config)
     print(

@@ -19,6 +19,8 @@ Configured H.264, H.265, AV1 and VP9 encoders available in FFmpeg get a one-seco
 
 Screens favor near-target quality, then size and time. This heuristic can miss useful encoders; raw screen results are retained. A budget-limited run is a partial search, not proof that the best possible settings were found.
 
+Each quality discovered during tuning becomes a shared candidate. Within the budget, the runner measures that exact encoder, quality and format variant across every prepared tuning sample. The report requires successful measurements meeting the target on every planned sample; averages cannot hide a weak scene. It shows the weakest scene and completed/required coverage. These choices remain provisional pending fresh-footage validation.
+
 Compact starts at VMAF 93 and Editing at 96. These are adjustable model-score targets, not guarantees of viewing quality or grading latitude. Quality-control values are not interchangeable between encoders. Recommend only measured settings that meet the target. Exact encoder commands are defined by the adapters described in the [configuration reference](configuration.md).
 
 ## Scoring and projections
@@ -27,9 +29,11 @@ VMAF is a model score, not a percentage of original quality. SSIM provides anoth
 
 Scores use original-resolution VMAF, with `vmaf_4k_v0.6.1` at source widths of 3840 or more and `vmaf_v0.6.1` otherwise. Reduced-resolution candidates are upscaled against the original reference for scoring, so downscaling loss remains part of the comparison. Quick mode scores every second frame for VMAF; Thorough scores every frame. Frame counts are checked and timestamps aligned by frame index.
 
-Reference chroma is converted to the requested output format. Scores therefore do not measure all color-detail loss when converting original 4:2:2 footage to 4:2:0. Use separate configurations and output folders to compare format or resolution choices.
+Reference chroma is converted to the requested output format. Scores therefore do not measure all color-detail loss when converting original 4:2:2 footage to 4:2:0. Use named format variants within one experiment to compare format or resolution choices.
 
 Benchmark encodes are video-only. Timing includes decoding, scaling, encoding and disk I/O. It excludes scoring, hashing, previews and archive verification. Duration projections are linear estimates; they exclude audio and other retained streams. Source complexity, machine load, drivers and encoder builds can change actual size and time. Stable trial order, warm-up probes and repeated timings do not eliminate thermal or system-load bias.
+
+Full-source projections average measured rates within each distinct source, then multiply by its full duration and sum the sources. Multiple sections from one file contribute to its average without counting that file twice. The report starts with the selected sources' total duration; the duration control scales that source mix. Older results without full durations retain labeled sample-duration extrapolation. See the [configuration reference](configuration.md) for evidence and export labels.
 
 HDR, interlaced and variable-frame-rate sources are rejected. Supported format choices are listed in the [configuration reference](configuration.md).
 

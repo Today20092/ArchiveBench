@@ -12,11 +12,12 @@ export function smallest(rows, target, lowTarget = null, maxMinutes = null) {
 }
 export const configurationKey = row => JSON.stringify([row.variant ?? 'legacy', row.encoder, row.quality, row.resolution ?? 'original']);
 
-// Weight projections by measured sample duration, not by the number of samples.
-export function configurations(result, minutes, sampleId = '') {
-  const samples = sampleId ? result.samples.filter(sample => sample.id === sampleId) : result.samples;
+export function configurations(result, minutes = null, sampleId = '') {
+  const tuningSamples = result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning');
+  const samples = sampleId ? tuningSamples.filter(sample => sample.id === sampleId) : tuningSamples;
   const groups = new Map();
   for (const trial of result.trials) {
+    if ((trial.stage ?? 'tuning') !== 'tuning') continue;
     if (!samples.some(sample => sample.id === trial.sample)) continue;
     const key = configurationKey(trial);
     if (!groups.has(key)) groups.set(key, new Map());
@@ -26,13 +27,34 @@ export function configurations(result, minutes, sampleId = '') {
   return [...groups].map(([id, group]) => {
     const trials = [...group.values()];
     const seconds = samples.filter(sample => group.has(sample.id)).reduce((sum, sample) => sum + sample.seconds, 0);
+    const weakest = [...trials].sort((a,b) => a.vmaf - b.vmaf)[0];
     const total = {...trials[0], id, trials, complete: trials.length === expected, coverage: trials.length, expected,
+      weakest_sample: weakest.sample, evidence_status:'provisional',
       bytes: trials.reduce((sum, trial) => sum + trial.bytes, 0),
       encode_seconds: trials.reduce((sum, trial) => sum + trial.encode_seconds, 0),
       vmaf: Math.min(...trials.map(trial => trial.vmaf)),
       vmaf_p5: trials.every(trial => Number.isFinite(trial.vmaf_p5)) ? Math.min(...trials.map(trial => trial.vmaf_p5)) : null,
       ssim: Math.min(...trials.map(trial => trial.ssim))};
-    return project(total, seconds, minutes);
+    const sources = new Map();
+    for (const sample of samples) {
+      if (!group.has(sample.id)) continue;
+      const source = sample.source_id ?? sample.id;
+      if (!sources.has(source)) sources.set(source, []);
+      sources.get(source).push(sample);
+    }
+    const knownDurations = samples.every(sample => Number.isFinite(sample.source_seconds) && sample.source_seconds > 0);
+    if (!knownDurations) return {...project(total, seconds, minutes ?? 60), projection_basis:'sample-duration extrapolation'};
+    let projectedBytes = 0, projectedSeconds = 0, sourceSeconds = 0;
+    for (const sections of sources.values()) {
+      const duration = sections[0].source_seconds;
+      sourceSeconds += duration;
+      projectedBytes += duration * sections.reduce((sum, sample) => sum + group.get(sample.id).bytes / sample.seconds, 0) / sections.length;
+      projectedSeconds += duration * sections.reduce((sum, sample) => sum + group.get(sample.id).encode_seconds / sample.seconds, 0) / sections.length;
+    }
+    const factor = minutes === null ? 1 : minutes * 60 / sourceSeconds;
+    return {...total, source_seconds:sourceSeconds, projected_bytes:projectedBytes,
+      projected_encode_seconds:projectedSeconds, projection_basis:'selected-source video-only projection',
+      gib:projectedBytes * factor / 1073741824, minutes:projectedSeconds * factor / 60};
   });
 }
 
@@ -63,5 +85,6 @@ export function archiveSettings(result, trial) {
     minimum_saving:0.1,audio_mode:config.audio_mode ?? 'copy',
     drop_audio_tracks:config.drop_audio_tracks ?? [],audio_kbps_per_channel:config.audio_kbps_per_channel ?? 192,
     subtitles:config.subtitles ?? 'copy',attachments:config.attachments ?? 'copy',metadata:config.metadata ?? 'copy',
-    benchmark_identity:result.identity,source_sample:trial.sample,vmaf:trial.vmaf};
+    benchmark_identity:result.identity,source_sample:trial.sample,vmaf:trial.vmaf,
+    evidence_status:'provisional',evidence_scope:'tuning',validated:false};
 }

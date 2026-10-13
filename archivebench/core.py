@@ -130,6 +130,7 @@ def inspect_source(path: Path, start: float, seconds: float, ffprobe: str) -> di
     if len(stamps) < 2:
         raise ValueError("Insufficient frame timestamps")
     video["fps"] = str(fps)
+    video["duration"] = float(info["format"]["duration"])
     video["frames"] = round(seconds * float(fps))
     if video["frames"] < 2:
         raise ValueError("Sample must contain at least two frames")
@@ -481,11 +482,106 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     repeats = 1 if config["mode"] == "quick" else 3
     result["status"] = "running"
     save(result_path, result)
+    contexts: list[dict[str, Any]] = []
+
+    def measure_candidate(encoder: str, quality: int) -> dict[str, Any]:
+        key = f"{variant_id}-tuning-{sample_id}-{encoder}-q{quality}"
+        previous = next((t for t in result["trials"] if t["id"] == key), None)
+        if previous:
+            return previous
+        print(
+            f"[{sample_id}] {encoder} quality {quality}, shared tuning measurement",
+            flush=True,
+        )
+        trial_dir = directory / f"{encoder}-q{quality}"
+        trial_dir.mkdir(exist_ok=True)
+        temp = trial_dir / "encoded.partial.mkv"
+        encoded = trial_dir / "encoded.mkv"
+        # Uncheckpointed generated files are overwritten, never source files.
+        probe_frames = min(video["frames"], max(2, round(float(Fraction(video["fps"])))))
+        args = encode_args(
+            ffmpeg,
+            path,
+            sample["start"],
+            probe_frames,
+            temp,
+            encoder,
+            quality,
+            pixel,
+            video,
+            target,
+        )
+        pilot_started = time.monotonic()
+        run(args, min(30, remaining()))
+        pilot_seconds = time.monotonic() - pilot_started
+        validate_output(temp, target, encoder, pixel, ffprobe)
+        print(
+            f"  Pilot estimate: {pilot_seconds * video['frames'] / probe_frames:.0f}s for this sample (includes startup; approximate)",
+            flush=True,
+        )
+        timings = []
+        for repeat in range(repeats):
+            if time.monotonic() - started >= budget:
+                raise subprocess.TimeoutExpired(encoder, budget)
+            tick = time.monotonic()
+            run(
+                encode_args(
+                    ffmpeg,
+                    path,
+                    sample["start"],
+                    video["frames"],
+                    temp,
+                    encoder,
+                    quality,
+                    pixel,
+                    video,
+                    target,
+                ),
+                remaining(),
+            )
+            timings.append(time.monotonic() - tick)
+        validate_output(temp, target, encoder, pixel, ffprobe)
+        measured = score(
+            ffmpeg,
+            temp,
+            reference,
+            video,
+            pixel,
+            trial_dir,
+            2 if config["mode"] == "quick" else 1,
+            remaining(),
+            ffprobe,
+        )
+        temp.replace(encoded)
+        metrics = {
+            "id": key,
+            "sample": sample_id,
+            "encoder": encoder,
+            "variant": variant_id,
+            "variant_label": variant["label"],
+            "stage": "tuning",
+            "quality": quality,
+            "pixel_format": pixel,
+            "width": target["width"],
+            "height": target["height"],
+            "resolution": config.get("resolution", "original"),
+            "output": str(encoded),
+            "sha256": digest(encoded),
+            "bytes": encoded.stat().st_size,
+            "encode_seconds": statistics.median(timings),
+            "timings": timings,
+            "preview": preview(ffmpeg, encoded, trial_dir / "preview.jpg"),
+            **measured,
+        }
+        result["trials"].append(metrics)
+        save(result_path, result)
+        return metrics
+
     experiment_config = config
     variants = format_variants(config)
     print(f"Format combinations: {', '.join(v['label'] for v in variants)}", flush=True)
     print(
-        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes} tuning trials; adaptive tuning may stop earlier.",
+        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) ** 2 * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes} tuning trials including shared settings on every sample; adaptive tuning may stop earlier.",
         flush=True,
     )
     for variant, index, sample in (
@@ -558,6 +654,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 result["samples"].append(
                     {
                         "id": sample_id,
+                        "source_id": f"source-{list(source_hashes).index(str(path)) + 1}",
+                        "source_seconds": float(video["duration"]),
+                        "stage": "tuning",
                         "label": sample.get("label", path.name),
                         "video": video,
                         "output_video": {
@@ -577,6 +676,21 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             )
             save(result_path, result)
             continue
+        contexts.append(
+            {
+                "config": config,
+                "variant": variant,
+                "sample": sample,
+                "video": video,
+                "target": target,
+                "reference": reference,
+                "directory": directory,
+                "path": path,
+                "sample_id": sample_id,
+                "variant_id": variant_id,
+                "pixel": pixel,
+            }
+        )
         # Screen every configured installed implementation before spending the tuning budget.
         screen_frames = min(video["frames"], max(2, round(float(Fraction(video["fps"])))))
         screen_reference = directory / "screen-reference.mkv"
@@ -718,94 +832,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     if previous:
                         metrics = previous
                     else:
-                        print(
-                            f"[{sample_id}] {encoder} quality {quality}, trial {attempt + 1}/{passes}",
-                            flush=True,
-                        )
-                        trial_dir = directory / f"{encoder}-q{quality}"
-                        trial_dir.mkdir(exist_ok=True)
-                        temp = trial_dir / "encoded.partial.mkv"
-                        encoded = trial_dir / "encoded.mkv"
-                        # Uncheckpointed generated files are overwritten, never source files.
-                        probe_frames = min(
-                            video["frames"], max(2, round(float(Fraction(video["fps"]))))
-                        )
-                        args = encode_args(
-                            ffmpeg,
-                            path,
-                            sample["start"],
-                            probe_frames,
-                            temp,
-                            encoder,
-                            quality,
-                            pixel,
-                            video,
-                            target,
-                        )
-                        pilot_started = time.monotonic()
-                        run(args, min(30, remaining()))
-                        pilot_seconds = time.monotonic() - pilot_started
-                        validate_output(temp, target, encoder, pixel, ffprobe)
-                        print(
-                            f"  Pilot estimate: {pilot_seconds * video['frames'] / probe_frames:.0f}s for this sample (includes startup; approximate)",
-                            flush=True,
-                        )
-                        timings = []
-                        for repeat in range(repeats):
-                            if time.monotonic() - started >= budget:
-                                raise subprocess.TimeoutExpired(encoder, budget)
-                            tick = time.monotonic()
-                            run(
-                                encode_args(
-                                    ffmpeg,
-                                    path,
-                                    sample["start"],
-                                    video["frames"],
-                                    temp,
-                                    encoder,
-                                    quality,
-                                    pixel,
-                                    video,
-                                    target,
-                                ),
-                                remaining(),
-                            )
-                            timings.append(time.monotonic() - tick)
-                        validate_output(temp, target, encoder, pixel, ffprobe)
-                        measured = score(
-                            ffmpeg,
-                            temp,
-                            reference,
-                            video,
-                            pixel,
-                            trial_dir,
-                            2 if config["mode"] == "quick" else 1,
-                            remaining(),
-                            ffprobe,
-                        )
-                        temp.replace(encoded)
-                        metrics = {
-                            "id": key,
-                            "sample": sample_id,
-                            "encoder": encoder,
-                            "variant": variant_id,
-                            "variant_label": variant["label"],
-                            "stage": "tuning",
-                            "quality": quality,
-                            "pixel_format": pixel,
-                            "width": target["width"],
-                            "height": target["height"],
-                            "resolution": config.get("resolution", "original"),
-                            "output": str(encoded),
-                            "sha256": digest(encoded),
-                            "bytes": encoded.stat().st_size,
-                            "encode_seconds": statistics.median(timings),
-                            "timings": timings,
-                            "preview": preview(ffmpeg, encoded, trial_dir / "preview.jpg"),
-                            **measured,
-                        }
-                        result["trials"].append(metrics)
-                        save(result_path, result)
+                        metrics = measure_candidate(encoder, quality)
                     tested.append((quality, metrics["vmaf"]))
                     difference = float(config["target_vmaf"]) - metrics["vmaf"]
                     if abs(difference) <= float(config.get("tolerance", 0.5)):
@@ -829,6 +856,34 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 save(result_path, result)
         if time.monotonic() - started >= budget:
             break
+    # Independently tuned qualities are candidates, not per-scene winners. Fill their missing evidence.
+    candidates = sorted(
+        {(t.get("variant", "legacy"), t["encoder"], t["quality"]) for t in result["trials"]}
+    )
+    for context in contexts:
+        config, variant, sample = context["config"], context["variant"], context["sample"]
+        video, target, reference = context["video"], context["target"], context["reference"]
+        directory, path = context["directory"], context["path"]
+        sample_id, variant_id, pixel = context["sample_id"], context["variant_id"], context["pixel"]
+        for candidate_variant, encoder, quality in candidates:
+            if candidate_variant != variant_id:
+                continue
+            if time.monotonic() - started >= budget:
+                break
+            try:
+                measure_candidate(encoder, quality)
+            except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                result["skipped"].append(
+                    {
+                        "sample": sample_id,
+                        "variant": variant_id,
+                        "encoder": encoder,
+                        "quality": quality,
+                        "stage": "tuning",
+                        "reason": str(error),
+                    }
+                )
+                save(result_path, result)
     result["status"] = "budget_exhausted" if time.monotonic() - started >= budget else "completed"
     result["session_seconds"] = time.monotonic() - started
     save(result_path, result)

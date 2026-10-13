@@ -21,6 +21,20 @@ const collection = () => ({config:{samples:[{},{}]}, samples:[{id:'one',seconds:
  {id:'a2',sample:'two',encoder:'libx265',quality:24,bytes:600,encode_seconds:90,vmaf:91,vmaf_p5:80,ssim:.95},
  {id:'b1',sample:'one',encoder:'libx265',quality:28,bytes:50,encode_seconds:5,vmaf:95,vmaf_p5:92,ssim:.97},
 ]});
+test('project projections average rates within distinct sources and expose weakest evidence',()=>{
+ const result=collection();
+ result.config.samples=[{},{},{}];
+ result.samples=[{id:'one',seconds:10,source_id:'source-1',source_seconds:100},{id:'two',seconds:30,source_id:'source-1',source_seconds:100},{id:'three',seconds:10,source_id:'source-2',source_seconds:1000}];
+ result.trials.push({...result.trials[0],id:'a3',sample:'three',bytes:300,encode_seconds:20,vmaf:96});
+ const row=configurations(result)[0];
+ assert.equal(row.projected_bytes,31500);assert.equal(row.projected_encode_seconds,2200);
+ assert.equal(row.source_seconds,1100);assert.equal(row.weakest_sample,'two');
+ assert.equal(row.evidence_status,'provisional');
+ assert.equal(row.gib,31500/1073741824);
+ assert.equal(archiveSettings(result,row.trials[0]).evidence_status,'provisional');
+ result.trials.push({...result.trials[0],id:'held-out',stage:'validation',vmaf:1});
+ assert.equal(configurations(result,1)[0].vmaf,91);
+});
 test('format variants never merge measurements and exports retain the selected policy',()=>{
  const result=collection();result.config.pixel_format='source';
  result.config.variants=[{id:'source',label:'Match source',pixel_format:'source',resolution:'original'},{id:'small',label:'Small',pixel_format:'yuv420p',resolution:'original'}];
