@@ -44,9 +44,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: node --test report/playback.test.mjs
       - run: git diff --exit-code -- archivebench/assets/report.js
       - run: uv run tests/create_demo.py
       - run: node report/browser-check.mjs runs/demo/benchmark/report.html
+      - run: node report/stills-check.mjs runs/demo/benchmark/report.html
       - run: uv build
       - name: Smoke-test the installed wheel
         shell: pwsh

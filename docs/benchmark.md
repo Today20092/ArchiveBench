@@ -23,6 +23,14 @@ Each quality discovered during tuning becomes a shared candidate. Within the bud
 
 Compact starts at VMAF 93 and Editing at 96. These are adjustable model-score targets, not guarantees of viewing quality or grading latitude. Quality-control values are not interchangeable between encoders. Recommend only measured settings that meet the target. Exact encoder commands are defined by the adapters described in the [configuration reference](configuration.md).
 
+## Fresh-footage validation and visual review
+
+Setup proposes separate, non-overlapping sections from each selected source for you to review. After tuning, the runner freezes the smallest and fastest qualifying candidates for each variant and tests those exact settings on the fresh sections. A setting becomes validated only after it meets the quality target on every required tuning and validation sample. Failed, incomplete and provisional candidates stay visible with their evidence status.
+
+Thirty percent of the budget is reserved for validation by default. Resuming an incomplete run continues the frozen shortlist; validation results never tune its settings. Raising the report's target checks the saved validation scores too.
+
+The report includes matched native-size stills from up to three separated low-scoring moments. Use the crop and zoom controls to inspect detail. Companion playback provides shared play, pause and seek controls; synchronization is approximate in a browser. Playback previews are converted to H.264 8-bit 4:2:0 for compatibility. Review the exact encoded files before accepting color, editing or archive fidelity.
+
 ## Scoring and projections
 
 VMAF is a model score, not a percentage of original quality. SSIM provides another comparison against the reference. Review motion and detail in the saved clips at native size before accepting a setting.

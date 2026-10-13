@@ -2,14 +2,14 @@
 
 [Back to the README](../README.md) · [Repository instructions](../AGENTS.md)
 
-ArchiveBench is in development. Windows is the tested platform; macOS/Linux and their hardware encoders remain experimental. The Python package includes bundled report assets, so users do not need Node to run benchmarks or view reports.
+Windows is the tested platform; macOS/Linux and their hardware encoders remain experimental. The Python package includes bundled report assets, so users do not need Node to run benchmarks or view reports.
 
 ## Run checks
 
 From the repository root:
 
 ```powershell
-uv sync --locked
+uv sync --locked --python 3.11
 uv run pytest -q
 uv run ruff format --check .
 uv run ruff check .
@@ -17,6 +17,8 @@ uv run ty check
 npm ci
 npm run build
 npm test
+node --test report/playback.test.mjs
+uv build
 ```
 
 For report changes, also generate a synthetic demo and check it in a browser:
@@ -24,6 +26,7 @@ For report changes, also generate a synthetic demo and check it in a browser:
 ```powershell
 uv run tests/create_demo.py
 node report/browser-check.mjs
+node report/stills-check.mjs runs/demo/benchmark/report.html
 ```
 
 The demo writes under ignored `runs/`. If an existing demo run rejects a changed runner fingerprint, preserve that run and use its saved config with a fresh output folder:
