@@ -2,8 +2,16 @@
 name = "archivebench"
 version = "0.1.0"
 description = "Repeatable local video archival benchmarks with offline interactive reports"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
 dependencies = []
+
+[project.urls]
+Source = "https://github.com/Today20092/ArchiveBench"
+Issues = "https://github.com/Today20092/ArchiveBench/issues"
+Documentation = "https://github.com/Today20092/ArchiveBench#readme"
 
 [project.scripts]
 archivebench = "archivebench.cli:main"
@@ -27,3 +35,6 @@ python-version = "3.11"
 
 [tool.hatch.build.targets.wheel]
 packages = ["archivebench"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.scratch"]
