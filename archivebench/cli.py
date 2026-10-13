@@ -11,6 +11,7 @@ from .core import benchmark, primary, probe, run, save, validate_config
 from .encoders import SPECS, discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
+from .validation import validation_sections
 
 
 def wizard(config_path: Path) -> None:
@@ -92,6 +93,22 @@ def wizard(config_path: Path) -> None:
     if config_path.exists():
         raise ValueError("Config already exists; choose a new path")
     validate_config(config)
+    durations = {str(path): float(probe(path)["format"]["duration"]) for path in picked}
+    proposals = validation_sections(samples, durations)
+    unavailable = [section for section in proposals if "unavailable" in section]
+    if unavailable:
+        config["validation_unavailable"] = [section["unavailable"] for section in unavailable]
+        print(
+            "Fresh-footage validation unavailable for at least one source. Results remain provisional. Choose shorter tuning sections or longer sources in the saved config."
+        )
+    else:
+        config["validation_samples"] = proposals
+        config["validation_reserve"] = 0.3
+        for section in proposals:
+            print(
+                f"Fresh section: {Path(section['path']).name}, {section['start']:.1f}s to {section['start'] + section['seconds']:.1f}s. Review or replace validation_samples in the saved config before running."
+            )
+        print("One total budget: 70% tuning, 30% reserved for fixed-setting validation.")
     for variant in variants:
         for path in picked:
             video = primary(probe(path))

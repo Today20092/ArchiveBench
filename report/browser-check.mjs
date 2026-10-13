@@ -169,6 +169,21 @@ try {
   assert.match(await page.locator('#selection-status').innerText(), /3\/3 samples measured/);
   assert.match(await page.locator('#saved-conclusion').textContent(), /Provisional/);
 
+  const heldout = structuredClone(payload);
+  const tuning = {...payload.trials.find(trial => (trial.stage ?? 'tuning') === 'tuning'), id:'heldout-tuning', sample:'sample-1', stage:'tuning', vmaf:98};
+  heldout.config.samples = [{}];heldout.config.validation_samples = [{}];heldout.config.target_vmaf = 93;
+  heldout.samples = [{...payload.samples[0], id:'sample-1', stage:'tuning'}];
+  heldout.trials = [tuning, {...tuning,id:'heldout-check',stage:'validation',sample:'validation-1',vmaf:94}];
+  heldout.validation_shortlist = [{variant:tuning.variant,encoder:tuning.encoder,quality:tuning.quality}];
+  heldout.validation_target = 93;heldout.validation_required = 1;heldout.skipped = [];
+  await load(heldout);
+  assert.match(await page.locator('#saved-conclusion').textContent(), /validated collection/);
+  await page.locator('#target').fill('96');await page.locator('#target').dispatchEvent('input');
+  assert.match(await page.locator('#recommendation').innerText(), /No configuration meets/);
+  const heldoutSettings = await downloadJSON('#export');
+  assert.equal(heldoutSettings.data.validation_target,93);
+  assert.equal(heldoutSettings.data.validation_coverage,1);
+
   const hostile = structuredClone(multi);
   hostile.samples[0].label = '<img src="https://invalid.example/leak" onerror="window.injected=true">';
   await load(hostile);

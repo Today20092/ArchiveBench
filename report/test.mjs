@@ -71,3 +71,15 @@ test('empty collections and unknown sample scopes remain empty',()=>{
  assert.deepEqual(configurations(result,60),[]);
  assert.deepEqual(configurations(collection(),60,'missing'),[]);
 });
+test('fresh validation requires every holdout at saved target and display changes cannot forge exports',()=>{
+ const result={identity:'fixed',config:{samples:[{}],validation_samples:[{}],target_vmaf:93},samples:[{id:'sample-1',seconds:1}],trials:[{id:'t',sample:'sample-1',stage:'tuning',variant:'legacy',encoder:'libx264',quality:18,bytes:100,encode_seconds:1,vmaf:96,ssim:1}],skipped:[],validation_shortlist:[{variant:'legacy',encoder:'libx264',quality:18}],validation_required:1,validation_target:93};
+ let row=configurations(result,1)[0];assert.equal(row.evidence_status,'incomplete');assert.equal(archiveSettings(result,row).validated,false);
+ result.trials.push({...result.trials[0],id:'v',sample:'validation-1',stage:'validation',vmaf:92});
+ row=configurations(result,1)[0];assert.equal(row.evidence_status,'failed');assert.equal(archiveSettings(result,row).validated,false);
+ result.trials[1].vmaf=94;
+ row=configurations(result,1)[0];assert.equal(row.evidence_status,'validated');assert.equal(archiveSettings(result,row).validated,true);
+ assert.equal(eligible([row],95).length,0);assert.equal(eligible([row],93).length,1);assert.equal(archiveSettings(result,row).validation_target,93);
+ result.skipped.push({stage:'validation',variant:'legacy',encoder:'libx264',quality:18,terminal:true});
+ assert.equal(configurations(result,1)[0].evidence_status,'failed');
+ delete result.validation_shortlist;assert.equal(configurations(result,1)[0].evidence_status,'provisional');
+});

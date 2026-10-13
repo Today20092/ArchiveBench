@@ -22,21 +22,21 @@ let selectedId = null, pinnedId = null, inspectedTrialId = null;
 
 $('status').textContent = result.status.replaceAll('_', ' ');
 $('target').value = result.config.target_vmaf;
-for (const sample of result.samples) $('sample').add(new Option(sample.label, sample.id));
+for (const sample of result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning')) $('sample').add(new Option(sample.label, sample.id));
 const sampledSeconds = result.samples.reduce((sum, sample) => sum + sample.seconds, 0);
 const sourceDurations = new Map(result.samples.filter(sample => Number.isFinite(sample.source_seconds)).map(sample => [sample.source_id ?? sample.id, sample.source_seconds]));
 const sourceMinutes = sourceDurations.size ? [...sourceDurations.values()].reduce((sum, seconds) => sum + seconds, 0) / 60 : 60;
 $('minutes').value = sourceMinutes;
 $('duration').value = 'custom';
-$('coverage').textContent = `${result.samples.length} of ${result.config.samples.length} planned samples · ${sampledSeconds.toFixed(1)} seconds sampled · ${result.trials.length} measured trials · ${result.config.mode} mode. ${result.samples.map(sample => `${sample.label} (${sample.video.width} × ${sample.video.height})`).join('; ')}`;
+$('coverage').textContent = `${result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning').length} of ${result.config.samples.length} planned tuning samples · ${result.samples.filter(sample => sample.stage === 'validation').length}/${result.validation_required ?? 0} fresh sections measured · ${sampledSeconds.toFixed(1)} seconds sampled · ${result.trials.length} measured trials · ${result.config.mode} mode. ${result.samples.map(sample => `${sample.label} (${sample.video.width} × ${sample.video.height})`).join('; ')}`;
 $('run-limit').textContent = result.status === 'completed' ? 'Short-sample evidence. Size and time are projections; review representative footage before choosing.' : 'Partial experiment. Missing measurements cannot qualify a configuration for the whole collection.';
 $('skip-title').textContent = `Skipped or failed configurations (${result.skipped.length})`;
 $('skips').textContent = JSON.stringify(result.skipped, null, 2);
 $('environment').textContent = JSON.stringify({environment:result.environment, identity:result.identity, config:result.config, tools:Object.fromEntries(Object.entries(result.tools).map(([name, value]) => [name, {version:value.version.split('\n')[0], sha256:value.sha256}]))}, null, 2);
-const savedRows = eligible(configurations(result, 60), result.config.target_vmaf);
+const savedRows = eligible(configurations(result, 60), result.config.target_vmaf).filter(row => row.evidence_status === 'validated');
 const savedSmallest = [...savedRows].sort((a,b) => a.gib-b.gib)[0];
 const savedFastest = [...savedRows].sort((a,b) => a.minutes-b.minutes)[0];
-$('saved-conclusion').textContent = `Saved mean target: ${result.config.target_vmaf}. ` + (savedSmallest ? `Smallest qualifying collection choice: ${label(savedSmallest)}. Fastest: ${label(savedFastest)}. Provisional tuning evidence pending fresh-footage validation. Visual review remains separate.` : 'No exact configuration meets that floor on every planned sample. Per-sample results remain available for exploration.');
+$('saved-conclusion').textContent = `Saved mean target: ${result.config.target_vmaf}. ` + (savedSmallest ? `Smallest validated collection choice: ${label(savedSmallest)}. Fastest: ${label(savedFastest)}. Fresh footage passed the saved target. Visual review remains separate.` : 'Provisional tuning evidence. No validated project recommendation, because fresh-footage validation is absent, failed or incomplete. Per-sample results remain available for exploration.');
 
 function optional(id, minimum, maximum = Infinity) {
   const value = $(id).value.trim();
@@ -52,9 +52,10 @@ function current() {
 function checkText(row, state) {
   if (!row.complete) return `Incomplete: ${row.coverage}/${row.expected} samples`;
   if (row.vmaf < state.target) return 'Below mean floor';
+  if (row.validation_vmaf !== null && row.validation_vmaf < state.target) return 'Fresh-section mean floor not met';
   if (state.lowTarget !== null && (!Number.isFinite(row.vmaf_p5) || row.vmaf_p5 < state.lowTarget)) return 'Low-5% floor not met';
   if (state.maxMinutes !== null && row.minutes > state.maxMinutes) return 'Over projected time limit';
-  return 'Passes measured checks · provisional';
+  return `Passes active checks · ${row.evidence_status} · fresh ${row.validation_coverage}/${row.validation_expected}`;
 }
 function choices(rows) {
   return {smallest:[...rows].sort((a,b) => a.gib-b.gib)[0], fastest:[...rows].sort((a,b) => a.minutes-b.minutes)[0]};
@@ -142,7 +143,7 @@ function render() {
   $('color-key').textContent = `Color: ${$('color-mode').value === 'hardware' ? 'CPU / GPU' : 'codec'}. Legend buttons affect chart visibility only.`;
   drawChart('time-chart', state, 'minutes', 'gib', 'Projected encoding (minutes)', 'Projected video size (GiB)');
   drawChart('quality-chart', state, 'gib', 'vmaf', 'Projected video size (GiB)', $('sample').value ? 'Mean VMAF' : 'Weakest sample mean VMAF');
-  const card = (row, title) => `<button class="recommendation-choice" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><span class="recommendation-label">${title}</span><strong>${escape(label(row))}</strong><span class="recommendation-values">Projected ${number(row.gib)} GiB · ${durationText(row.minutes)} · mean ≥ ${number(row.vmaf)}</span></button>`;
+  const card = (row, title) => `<button class="recommendation-choice" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><span class="recommendation-label">${title} · ${escape(row.evidence_status)}</span><strong>${escape(label(row))}</strong><span class="recommendation-values">Projected ${number(row.gib)} GiB · ${durationText(row.minutes)} · mean ≥ ${number(row.vmaf)}</span></button>`;
   $('recommendation').innerHTML = smallest ? `<h2>Qualifying measured choices</h2><div class="recommendation-grid">${card(smallest, smallest.id === fastest.id ? 'Smallest and fastest qualifying choice' : 'Smallest qualifying archive')}${smallest.id !== fastest.id ? card(fastest, 'Fastest qualifying encode') : ''}</div><p class="note">${state.qualifying.length} of ${rows.length} configurations pass the active checks in this scope. Visual review remains separate.</p>` : '<h2>No configuration meets these requirements</h2><p class="note">Inspect missing coverage or failed thresholds below. Changing display constraints does not produce new measurements.</p>';
   $('selection').hidden = !selected;
   $('evidence').hidden = !selected;
@@ -180,7 +181,7 @@ function sampleBars(trial, name, target, selected) {
 function renderEvidence(selected, baseline, state) {
   const allSelected = configurations(result, state.minutes).find(row => row.id === selected.id);
   const allBaseline = configurations(result, state.minutes).find(row => row.id === baseline?.id);
-  $('sample-evidence').innerHTML = result.samples.map(sample => {
+  $('sample-evidence').innerHTML = result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning').map(sample => {
     const trial = allSelected.trials.find(row => row.sample === sample.id), pinned = allBaseline?.trials.find(row => row.sample === sample.id);
     const passes = trial && eligible([trial], state.target, state.lowTarget).length;
     return `<div class="sample-row"><div class="sample-label"><button data-sample="${escape(sample.id)}" ${trial ? '' : 'disabled'}>${escape(sample.label)}</button><p class="${passes ? 'meets' : 'below'}">${trial ? passes ? 'Passes quality floors' : 'Quality floors not met' : 'Not measured at these settings'}</p></div><div>${sampleBars(trial, 'Selected', state.target, true)}${allBaseline && allBaseline.id !== allSelected.id ? sampleBars(pinned, 'Baseline', state.target, false) : ''}</div></div>`;
@@ -302,11 +303,11 @@ $('export').addEventListener('click', () => {const trial = result.trials.find(ro
 $('export-decision').addEventListener('click', () => {
   const state = current(), selected = state.rows.find(row => row.id === selectedId), baseline = state.rows.find(row => row.id === pinnedId);
   if (!selected) return;
-  const measurement = row => ({configuration:label(row), samples:row.trials.map(trial => ({id:trial.sample, trial_id:trial.id, bytes:trial.bytes, encode_seconds:trial.encode_seconds, timings:trial.timings, vmaf:trial.vmaf, vmaf_p5:trial.vmaf_p5, visually_reviewed:reviewed.has(trial.id)})), projected_video_gib:row.gib, projected_encode_minutes:row.minutes, coverage:`${row.coverage}/${row.expected}`, checks:checkText(row,state)});
+  const measurement = row => ({configuration:label(row), samples:row.trials.map(trial => ({id:trial.sample, trial_id:trial.id, bytes:trial.bytes, encode_seconds:trial.encode_seconds, timings:trial.timings, vmaf:trial.vmaf, vmaf_p5:trial.vmaf_p5, visually_reviewed:reviewed.has(trial.id)})), projected_video_gib:row.gib, projected_encode_minutes:row.minutes, coverage:`${row.coverage}/${row.expected}`, checks:checkText(row,state), evidence_status:row.evidence_status,validation_coverage:`${row.validation_coverage}/${row.validation_expected}`,validation_vmaf:row.validation_vmaf,validation_target:result.validation_target ?? null});
   download('archive-decision.json', {type:'archive-decision', version:1, benchmark_identity:result.identity, experiment_status:result.status, saved_mean_target:result.config.target_vmaf,
     scope:$('sample').value || 'collection', footage_minutes:state.minutes, mean_floor:state.target, low_5_floor:state.lowTarget, max_encode_minutes:state.maxMinutes,
     selected:measurement(selected), baseline:baseline ? measurement(baseline) : null, settings:archiveSettings(result, selected.trials.find(trial => trial.id === inspectedTrialId) ?? selected.trials[0]),
-    outstanding_review:[...result.samples.filter(sample => !$('sample').value || sample.id === $('sample').value).filter(sample => !selected.trials.some(trial => trial.sample === sample.id && reviewed.has(trial.id))).map(sample => sample.label),
+    outstanding_review:[...result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning').filter(sample => !$('sample').value || sample.id === $('sample').value).filter(sample => !selected.trials.some(trial => trial.sample === sample.id && reviewed.has(trial.id))).map(sample => sample.label),
       ...(!$('sample').value && result.samples.length < result.config.samples.length ? [`${result.config.samples.length-result.samples.length} planned samples have no validated data`] : [])],
     limits:['Size and time are video-only projections of the measured sample mix.', 'Review marks are self-reported in this session; they do not authorize cleanup.', 'Check chroma, resolution, stream retention and editor compatibility before archiving.']});
 });

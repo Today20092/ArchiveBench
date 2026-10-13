@@ -16,6 +16,7 @@ from typing import Any
 
 from .encoders import SPECS, discover, options
 from .formats import format_variants, output_video, scale_filter, validate_formats
+from .validation import shortlist, validation_sections
 
 
 def digest(path: Path) -> str:
@@ -361,6 +362,17 @@ def validate_config(config: dict[str, Any]) -> None:
     for name in config.get("encoders", []):
         if name not in SPECS:
             raise ValueError(f"Unsupported encoder config: {name}")
+    reserve = float(config.get("validation_reserve", 0.3))
+    if not math.isfinite(reserve) or not 0 < reserve < 1:
+        raise ValueError("Validation reserve must be between zero and one")
+    if "validation_samples" in config:
+        durations = {
+            str(Path(s["path"]).resolve()): float(
+                probe(Path(s["path"]), config.get("ffprobe", "ffprobe"))["format"]["duration"]
+            )
+            for s in config["samples"]
+        }
+        validation_sections(config["samples"], durations, config["validation_samples"])
     if not 0 <= float(config.get("tolerance", 0.5)) <= 5:
         raise ValueError("VMAF tolerance must be between 0 and 5")
     for name, quality in config.get("quality_overrides", {}).items():
@@ -442,6 +454,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "runner_sha256": digest(Path(__file__)),
             "adapters_sha256": digest(Path(__file__).with_name("encoders.py")),
             "formats_sha256": digest(Path(__file__).with_name("formats.py")),
+            "validation_sha256": digest(Path(__file__).with_name("validation.py")),
             "environment": environment,
         }
     )
@@ -474,23 +487,31 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             raise ValueError("Cached output missing/modified; use a new output folder")
     started = time.monotonic()
     budget = float(config["budget_minutes"]) * 60
+    stage = "tuning"
+    tuning_budget = (
+        budget * (1 - float(config.get("validation_reserve", 0.3)))
+        if "validation_samples" in config
+        else budget
+    )
+    deadline = tuning_budget
 
     def remaining() -> float:
-        return max(0.1, budget - (time.monotonic() - started))
+        return max(0.1, deadline - (time.monotonic() - started))
 
     passes = 2 if config["mode"] == "quick" else 4
     repeats = 1 if config["mode"] == "quick" else 3
     result["status"] = "running"
+    result["stage"] = "validation" if "validation_shortlist" in result else "tuning"
     save(result_path, result)
     contexts: list[dict[str, Any]] = []
 
     def measure_candidate(encoder: str, quality: int) -> dict[str, Any]:
-        key = f"{variant_id}-tuning-{sample_id}-{encoder}-q{quality}"
+        key = f"{variant_id}-{stage}-{sample_id}-{encoder}-q{quality}"
         previous = next((t for t in result["trials"] if t["id"] == key), None)
         if previous:
             return previous
         print(
-            f"[{sample_id}] {encoder} quality {quality}, shared tuning measurement",
+            f"[{sample_id}] {encoder} quality {quality}, shared {stage} measurement",
             flush=True,
         )
         trial_dir = directory / f"{encoder}-q{quality}"
@@ -521,7 +542,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         )
         timings = []
         for repeat in range(repeats):
-            if time.monotonic() - started >= budget:
+            if time.monotonic() - started >= deadline:
                 raise subprocess.TimeoutExpired(encoder, budget)
             tick = time.monotonic()
             run(
@@ -559,7 +580,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "encoder": encoder,
             "variant": variant_id,
             "variant_label": variant["label"],
-            "stage": "tuning",
+            "stage": stage,
             "quality": quality,
             "pixel_format": pixel,
             "width": target["width"],
@@ -586,9 +607,11 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     )
     for variant, index, sample in (
         (variant, index, sample)
-        for variant in variants
+        for variant in ([] if "validation_shortlist" in result else variants)
         for index, sample in enumerate(experiment_config["samples"])
     ):
+        if time.monotonic() - started >= deadline:
+            break
         config = {**experiment_config, **variant}
         variant_id = variant["id"]
         path = Path(sample["path"]).resolve()
@@ -694,29 +717,32 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         # Screen every configured installed implementation before spending the tuning budget.
         screen_frames = min(video["frames"], max(2, round(float(Fraction(video["fps"])))))
         screen_reference = directory / "screen-reference.mkv"
-        run(
-            [
-                ffmpeg,
-                "-v",
-                "error",
-                "-nostdin",
-                "-y",
-                "-i",
-                str(reference),
-                "-frames:v",
-                str(screen_frames),
-                "-c:v",
-                "ffv1",
-                "-pix_fmt",
-                video["pix_fmt"],
-                *color_args(video),
-                str(screen_reference),
-            ],
-            remaining(),
-        )
+        try:
+            run(
+                [
+                    ffmpeg,
+                    "-v",
+                    "error",
+                    "-nostdin",
+                    "-y",
+                    "-i",
+                    str(reference),
+                    "-frames:v",
+                    str(screen_frames),
+                    "-c:v",
+                    "ffv1",
+                    "-pix_fmt",
+                    video["pix_fmt"],
+                    *color_args(video),
+                    str(screen_reference),
+                ],
+                remaining(),
+            )
+        except subprocess.TimeoutExpired:
+            break
         screen_video = {**video, "frames": screen_frames}
         for encoder in chosen:
-            if time.monotonic() - started >= budget:
+            if time.monotonic() - started >= deadline:
                 break
             if any(
                 row["sample"] == sample_id
@@ -809,7 +835,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         )
         finalists = [row["encoder"] for row in screens[: 4 if config["mode"] == "quick" else 8]]
         for encoder in finalists:
-            if time.monotonic() - started >= budget:
+            if time.monotonic() - started >= deadline:
                 break
             if encoder not in available:
                 result["skipped"].append(
@@ -854,7 +880,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     }
                 )
                 save(result_path, result)
-        if time.monotonic() - started >= budget:
+        if time.monotonic() - started >= deadline:
             break
     # Independently tuned qualities are candidates, not per-scene winners. Fill their missing evidence.
     candidates = sorted(
@@ -868,7 +894,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         for candidate_variant, encoder, quality in candidates:
             if candidate_variant != variant_id:
                 continue
-            if time.monotonic() - started >= budget:
+            if time.monotonic() - started >= deadline:
                 break
             try:
                 measure_candidate(encoder, quality)
@@ -884,7 +910,163 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     }
                 )
                 save(result_path, result)
-    result["status"] = "budget_exhausted" if time.monotonic() - started >= budget else "completed"
+    config = experiment_config
+    if "validation_samples" in config:
+        if "validation_shortlist" not in result:
+            selected = shortlist(result)
+            if selected:
+                result["validation_shortlist"] = selected
+        result["validation_target"] = config["target_vmaf"]
+        result["validation_required"] = len(source_hashes)
+        result["validation_reserve"] = config.get("validation_reserve", 0.3)
+        result["budget_scope"] = "per invocation, shared across all stages and variants"
+        result["stage"] = "validation"
+        save(result_path, result)
+        stage, deadline = "validation", budget
+        for candidate in result.get("validation_shortlist", []):
+            for index, sample in enumerate(config["validation_samples"]):
+                if time.monotonic() - started >= deadline:
+                    break
+                variant = next(v for v in variants if v["id"] == candidate["variant"])
+                variant_id = variant["id"]
+                sample_id = f"validation-{index + 1}"
+                path = Path(sample["path"]).resolve()
+                directory = output / variant_id / sample_id
+                directory.mkdir(parents=True, exist_ok=True)
+                if any(
+                    failure.get("stage") == stage
+                    and failure.get("sample") == sample_id
+                    and failure.get("variant") == variant_id
+                    and failure.get("encoder") == candidate["encoder"]
+                    and failure.get("quality") == candidate["quality"]
+                    and failure.get("terminal")
+                    for failure in result["skipped"]
+                ):
+                    continue
+                try:
+                    video = inspect_source(
+                        path, float(sample["start"]), float(sample["seconds"]), ffprobe
+                    )
+                    target = output_video(video, variant)
+                    pixel = target["pix_fmt"]
+                    reference_directory = output / sample_id
+                    reference_directory.mkdir(exist_ok=True)
+                    reference = reference_directory / "reference.mkv"
+                    reference_identity = reference_directory / "reference.json"
+                    if reference.exists():
+                        if (
+                            not reference_identity.exists()
+                            or digest(reference)
+                            != json.loads(reference_identity.read_text())["sha256"]
+                        ):
+                            raise ValueError("Cached validation reference is unverified or changed")
+                    else:
+                        if (
+                            shutil.disk_usage(output).free
+                            < video["width"] * video["height"] * 4 * video["frames"] + 256 * 1024**2
+                        ):
+                            raise ValueError("Insufficient scratch space for validation reference")
+                        temp_ref = reference_directory / "reference.partial.mkv"
+                        run(
+                            [
+                                ffmpeg,
+                                "-v",
+                                "error",
+                                "-nostdin",
+                                "-y",
+                                "-ss",
+                                str(sample["start"]),
+                                "-i",
+                                str(path),
+                                "-map",
+                                f"0:{video['index']}",
+                                "-an",
+                                "-frames:v",
+                                str(video["frames"]),
+                                "-c:v",
+                                "ffv1",
+                                "-level",
+                                "3",
+                                "-pix_fmt",
+                                video["pix_fmt"],
+                                *color_args(video),
+                                str(temp_ref),
+                            ],
+                            remaining(),
+                        )
+                        temp_ref.replace(reference)
+                        save(reference_identity, {"sha256": digest(reference)})
+                    if not any(s["id"] == sample_id for s in result["samples"]):
+                        result["samples"].append(
+                            {
+                                "id": sample_id,
+                                "source_id": f"source-{list(source_hashes).index(str(path)) + 1}",
+                                "source_seconds": video["duration"],
+                                "stage": stage,
+                                "label": sample.get("label", path.name),
+                                "start": sample["start"],
+                                "seconds": video["frames"] / float(Fraction(video["fps"])),
+                                "video": video,
+                                "preview": preview(
+                                    ffmpeg, reference, reference_directory / "original.jpg"
+                                ),
+                            }
+                        )
+                    config = {**experiment_config, **variant}
+                    measure_candidate(candidate["encoder"], candidate["quality"])
+                except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    result["skipped"].append(
+                        {
+                            "sample": sample_id,
+                            "variant": variant_id,
+                            "encoder": candidate["encoder"],
+                            "quality": candidate["quality"],
+                            "stage": stage,
+                            "terminal": not isinstance(error, subprocess.TimeoutExpired),
+                            "reason": str(error),
+                        }
+                    )
+                    save(result_path, result)
+        config = experiment_config
+        for candidate in result.get("validation_shortlist", []):
+            evidence = [
+                t
+                for t in result["trials"]
+                if t.get("stage") == "validation"
+                and t["variant"] == candidate["variant"]
+                and t["encoder"] == candidate["encoder"]
+                and t["quality"] == candidate["quality"]
+            ]
+            failed = any(t["vmaf"] < config["target_vmaf"] for t in evidence) or any(
+                s.get("stage") == "validation"
+                and s.get("variant") == candidate["variant"]
+                and s.get("encoder") == candidate["encoder"]
+                and s.get("quality") == candidate["quality"]
+                and s.get("terminal")
+                for s in result["skipped"]
+            )
+            complete = {t["sample"] for t in evidence} == {
+                f"validation-{i + 1}" for i in range(result["validation_required"])
+            }
+            candidate["evidence_status"] = (
+                "failed" if failed else "validated" if complete else "incomplete"
+            )
+            candidate["validation_coverage"] = len(evidence)
+        result["validation_status"] = (
+            "validated"
+            if any(
+                c["evidence_status"] == "validated" for c in result.get("validation_shortlist", [])
+            )
+            else "incomplete"
+            if any(
+                c["evidence_status"] == "incomplete" for c in result.get("validation_shortlist", [])
+            )
+            else "failed"
+            if result.get("validation_shortlist")
+            else "no qualifying tuning candidates"
+        )
+    result["status"] = "budget_exhausted" if time.monotonic() - started >= deadline else "completed"
     result["session_seconds"] = time.monotonic() - started
+    result["remaining_seconds"] = max(0, budget - result["session_seconds"])
     save(result_path, result)
     return result

@@ -9,7 +9,7 @@ from archivebench.report import write_report
 def main() -> None:
     root = Path("runs/demo").resolve()
     root.mkdir(parents=True, exist_ok=True)
-    source = root / "synthetic-motion.mov"
+    source = root / "synthetic-motion-validation.mov"
     if not source.exists():
         run(
             [
@@ -23,7 +23,7 @@ def main() -> None:
                 "-i",
                 "testsrc2=size=640x360:rate=30",
                 "-t",
-                "4",
+                "8",
                 "-c:v",
                 "libx264",
                 "-crf",
@@ -48,6 +48,8 @@ def main() -> None:
         "pixel_format": "yuv420p10le",
         "target_vmaf": 93,
         "budget_minutes": 4,
+        "validation_reserve": 0.3,
+        "validation_samples": [{"path": str(source), "start": 4, "seconds": 4}],
         "samples": [
             {
                 "path": str(source),

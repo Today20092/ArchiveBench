@@ -2,6 +2,7 @@
 
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +16,19 @@ def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value["config"]["samples"] = [
         {**sample, "path": "[local source]"} for sample in value["config"]["samples"]
     ]
+    if "validation_samples" in value["config"]:
+        value["config"]["validation_samples"] = [
+            {**sample, "path": "[local source]"} for sample in value["config"]["validation_samples"]
+        ]
     for skipped in value["skipped"]:
         # FFmpeg diagnostics can contain local paths; raw errors remain in local results.json.
         skipped["reason"] = skipped["reason"].splitlines()[0][:160]
         for sample in result["config"]["samples"]:
             skipped["reason"] = skipped["reason"].replace(sample["path"], "[local source]")
+        if re.search(r"[A-Za-z]:[\\/]|(?:^|[\s'\"\[])/", skipped["reason"]):
+            skipped["reason"] = (
+                "Local process failed. See local results.json for detailed diagnostics."
+            )
     return value
 
 
@@ -59,6 +68,7 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "# ArchiveBench results",
         "",
         f"Status: {result['status']}",
+        f"Fresh-footage validation: {result.get('validation_status', 'provisional, no reviewed holdouts')}",
         "Format variants: "
         + "; ".join(
             f"{variant['label']} ({variant['pixel_format']}, {variant['resolution']})"

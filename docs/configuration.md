@@ -63,7 +63,15 @@ The chart-first report defaults to the whole collection. The runner tests each d
 
 Selected-source video-only projections average the measured size and encoding-time rates within each source, multiply by that source's full duration, then sum distinct source files. Selecting multiple sections from one source does not count its full duration twice. The report starts with the selected sources' combined duration; changing the duration scales the same measured source mix. These are estimates, not guaranteed full-file totals. Older results without source duration and identity retain a labeled sample-duration extrapolation.
 
-Tuning-qualified choices remain provisional pending fresh-footage validation. Archive exports explicitly record tuning evidence and `validated: false`. Changing display thresholds cannot create measurements or validation evidence.
+Tuning-qualified choices remain provisional pending fresh-footage validation. Archive exports record the canonical evidence status. Changing display thresholds cannot create measurements or validation evidence.
+
+### Fresh-footage validation
+
+Setup proposes one `validation_samples` section per source, twice its longest tuning section and capped at 60 seconds. Review or replace these saved intervals before running, ideally choosing a different scene. Every interval must fit the source and avoid every tuning interval for that source. If a source lacks enough footage, setup explains the gap and leaves the experiment provisional. Shorter explicit fresh sections are allowed after review.
+
+`validation_reserve` defaults to `0.3`. All variants and stages share one time budget per invocation. Tuning stops at 70% of that allowance, and validation uses the remaining time. Preflight/tool checks and source hashing precede the timed work. An explicit resume starts a new invocation allowance; completed verified trials are reused.
+
+The smallest and fastest tuning-qualified settings per variant form a deduplicated, frozen shortlist. Every candidate uses its exact encoder and quality on every fresh section. Validation never tunes from those sections, changes encoder, or lowers the target. Resume continues the frozen shortlist. A scoring failure is failed evidence, a timeout or missing section is incomplete evidence, and only passing every required section produces validated evidence. Legacy results without holdouts remain provisional.
 
 Optional low-5% quality and projected encoding-time limits start blank. Changing them, the mean floor or the duration does not alter the saved experiment conclusion. Pin a measured configuration to compare another against that named baseline. Size/time comparisons require the same sample coverage. Decision-summary exports include active constraints, measured sample values, projections and self-reported visual-review status; archive-settings exports retain their existing schema.
 

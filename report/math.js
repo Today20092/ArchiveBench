@@ -4,13 +4,28 @@ export function project(trial, sampleSeconds, minutes) {
 }
 export function eligible(rows, target, lowTarget = null, maxMinutes = null) {
   return rows.filter(row => row.complete !== false && row.vmaf >= target &&
+    (row.validation_vmaf == null || row.validation_vmaf >= target) &&
     (lowTarget === null || (Number.isFinite(row.vmaf_p5) && row.vmaf_p5 >= lowTarget)) &&
+    (lowTarget === null || row.validation_vmaf == null || (Number.isFinite(row.validation_vmaf_p5) && row.validation_vmaf_p5 >= lowTarget)) &&
     (maxMinutes === null || row.minutes <= maxMinutes));
 }
 export function smallest(rows, target, lowTarget = null, maxMinutes = null) {
   return eligible(rows, target, lowTarget, maxMinutes).sort((a,b) => a.gib - b.gib || a.bytes - b.bytes)[0] ?? null;
 }
 export const configurationKey = row => JSON.stringify([row.variant ?? 'legacy', row.encoder, row.quality, row.resolution ?? 'original']);
+
+export function evidenceStatus(result, row) {
+  const selected = result.validation_shortlist?.some(candidate => candidate.variant === (row.variant ?? 'legacy') && candidate.encoder === row.encoder && candidate.quality === row.quality);
+  if (!selected) return 'provisional';
+  const required = result.config.validation_samples ?? [];
+  const tuning = result.trials.filter(trial => (trial.stage ?? 'tuning') === 'tuning' && (trial.variant ?? 'legacy') === (row.variant ?? 'legacy') && trial.encoder === row.encoder && trial.quality === row.quality);
+  const evidence = result.trials.filter(trial => trial.stage === 'validation' && trial.variant === row.variant && trial.encoder === row.encoder && trial.quality === row.quality);
+  if (result.skipped?.some(failure => failure.stage === 'validation' && failure.variant === row.variant && failure.encoder === row.encoder && failure.quality === row.quality && failure.terminal)) return 'failed';
+  if (evidence.some(trial => trial.vmaf < result.validation_target)) return 'failed';
+  if (tuning.some(trial => trial.vmaf < result.validation_target)) return 'failed';
+  if (!result.config.samples.every((_, i) => tuning.some(trial => trial.sample === `sample-${i + 1}`)) || required.length !== result.validation_required || required.length === 0 || !required.every((_, i) => evidence.some(trial => trial.sample === `validation-${i + 1}`))) return 'incomplete';
+  return 'validated';
+}
 
 export function configurations(result, minutes = null, sampleId = '') {
   const tuningSamples = result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning');
@@ -35,6 +50,12 @@ export function configurations(result, minutes = null, sampleId = '') {
       vmaf: Math.min(...trials.map(trial => trial.vmaf)),
       vmaf_p5: trials.every(trial => Number.isFinite(trial.vmaf_p5)) ? Math.min(...trials.map(trial => trial.vmaf_p5)) : null,
       ssim: Math.min(...trials.map(trial => trial.ssim))};
+    total.evidence_status = evidenceStatus(result, total);
+    const validation = result.trials.filter(trial => trial.stage === 'validation' && trial.variant === total.variant && trial.encoder === total.encoder && trial.quality === total.quality);
+    total.validation_coverage = validation.length;
+    total.validation_expected = result.validation_required ?? 0;
+    total.validation_vmaf = validation.length ? Math.min(...validation.map(trial => trial.vmaf)) : null;
+    total.validation_vmaf_p5 = validation.length && validation.every(trial => Number.isFinite(trial.vmaf_p5)) ? Math.min(...validation.map(trial => trial.vmaf_p5)) : null;
     const sources = new Map();
     for (const sample of samples) {
       if (!group.has(sample.id)) continue;
@@ -77,6 +98,7 @@ export function pareto(rows, dimensions) {
 export function archiveSettings(result, trial) {
   const config = result.config;
   const variant = config.variants?.find(variant => variant.id === trial.variant) ?? config;
+  const validation = (result.trials ?? []).filter(row => row.stage === 'validation' && row.variant === trial.variant && row.encoder === trial.encoder && row.quality === trial.quality);
   return {version:2,type:'archive-settings',encoder:trial.encoder,quality:trial.quality,
     pixel_format:variant.pixel_format === 'source' ? 'source' : trial.pixel_format,
     resolution:trial.resolution ?? variant.resolution ?? 'original',
@@ -86,5 +108,7 @@ export function archiveSettings(result, trial) {
     drop_audio_tracks:config.drop_audio_tracks ?? [],audio_kbps_per_channel:config.audio_kbps_per_channel ?? 192,
     subtitles:config.subtitles ?? 'copy',attachments:config.attachments ?? 'copy',metadata:config.metadata ?? 'copy',
     benchmark_identity:result.identity,source_sample:trial.sample,vmaf:trial.vmaf,
-    evidence_status:'provisional',evidence_scope:'tuning',validated:false};
+    evidence_status:evidenceStatus(result, trial),evidence_scope:validation.length ? 'tuning and validation' : 'tuning',validated:evidenceStatus(result, trial) === 'validated',
+    validation_target:result.validation_target ?? null,validation_coverage:validation.length,validation_expected:result.validation_required ?? 0,
+    validation_vmaf:validation.length ? Math.min(...validation.map(row => row.vmaf)) : null};
 }
