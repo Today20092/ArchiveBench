@@ -26,6 +26,19 @@ uv run archivebench archive --source D:\Project\Originals --output E:\Project\Ar
 
 Originals remain in place. The runner validates outputs before marking them verified. Encodes saving less than 10% are discarded; originals stay intact. A batch failure stops the run and leaves its checkpoint for inspection or restart. Rerun with the same source, output and settings to continue. See [lock-file handling](benchmark.md#restart-and-budgets) after an abrupt shutdown.
 
+## Run an overnight archive next to Originals
+
+The existing runner can handle a full project after you choose and review benchmark settings. Use a neighboring `Archived` directory as the output:
+
+```powershell
+uv run archivebench archive --source D:\Project\Originals --output D:\Project\Archived --settings archive-settings.json
+uv run archivebench archive --source D:\Project\Originals --output D:\Project\Archived --settings archive-settings.json --execute
+```
+
+The first command reviews the list; the second encodes it. Leave the computer awake with enough output space. Relative subfolders are retained, and outputs have an `.archive.mkv` suffix. You can choose another disk instead by changing `--output`.
+
+If using the installed command, omit `uv run`. An agent can adapt the runner for your project, but it should keep the saved settings, checkpoint, hash/path/stream/decode checks and separate cleanup. A convenience scheduling wrapper is a possible future addition; the current runner executes when launched.
+
 ## Review and remove originals
 
 **Cleanup permanently deletes the listed originals.** Run it only after visual review and an explicit decision to remove those files. Benchmarking or encoding alone is not permission to delete them.
