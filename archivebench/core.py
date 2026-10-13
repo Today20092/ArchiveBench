@@ -387,6 +387,11 @@ def benchmark(config_path: Path, output: Path) -> dict[str, Any]:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     validate_config(config)
     output = output.resolve()
+    sources = config["samples"] + config.get("validation_samples", [])
+    if any(Path(sample["path"]).resolve().is_relative_to(output) for sample in sources):
+        raise ValueError(
+            "Run output folder contains a selected source; choose separate scratch space"
+        )
     output.mkdir(parents=True, exist_ok=True)
     lock = output / ".lock"
     with lock.open("x", encoding="utf-8") as stream:
