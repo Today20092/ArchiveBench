@@ -1,0 +1,11 @@
+# Agent benchmark procedure
+
+1. Establish the user's source clips/folder, compact/editing intent, output format and time/scratch-space budget. List clips with `uv run archivebench scan SOURCE`; propose diverse sections for motion, fine detail and dark/noisy footage. Complete when selected sections and budget are explicit.
+2. Run `uv run archivebench doctor`. Complete when the FFmpeg build, libvmaf availability and configured encoder list are recorded. If tools/scoring support are missing, explain the requirement and stop dependent work.
+3. Create/review a config using `setup` or the [configuration reference](configuration.md). Show selected sections, output format, target and budget. Complete when the user approves the experiment configuration. Use absolute local source paths and a scratch output folder with enough free space for lossless references.
+4. Run `uv run archivebench benchmark CONFIG --output RUN`. Display progress in a visible terminal when requested. On interruption, rerun the same command. Complete when results are saved as completed/budget_exhausted or a specific failure is reported. Budget exhaustion is a partial search, not proof of optimality.
+5. Inspect `results.json`, `summary.md` and the HTML report. Explain measured size/time/quality tradeoffs per sample, actual failed/skipped probes, targets not reached and projection limits. Complete when recommendations identify exact measured settings and representative clips for human review. VMAF is never a percentage of original quality.
+6. If asked to archive, export/prepare the selected settings and run the archive command without `--execute` to show the review list. Encode only the approved scope. Complete when outputs validate and originals remain intact.
+7. If explicitly asked to remove originals after review, show the cleanup dry-run first and use the separate cleanup command. Complete when its checks pass and the requested cleanup finishes. Preserve every verification guard when adapting the runner.
+
+When changing dimensions, frame rates or format groups, create a separate experiment. HDR/interlaced/VFR sources need a tested preservation/scoring path; an agent should explain this limit rather than silently converting them.

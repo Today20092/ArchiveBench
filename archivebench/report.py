@@ -1,0 +1,75 @@
+"""Offline report generation from canonical JSON; local paths stay out of shared reports."""
+
+import csv
+import json
+from pathlib import Path
+from typing import Any
+
+
+def public_result(result: dict[str, Any]) -> dict[str, Any]:
+    value = json.loads(json.dumps(result))
+    for trial in value["trials"] + value.get("screening", []):
+        trial.pop("output", None)
+    value["config"]["samples"] = [
+        {**sample, "path": "[local source]"} for sample in value["config"]["samples"]
+    ]
+    for skipped in value["skipped"]:
+        # FFmpeg diagnostics can contain local paths; raw errors remain in local results.json.
+        skipped["reason"] = skipped["reason"].splitlines()[0][:160]
+        for sample in result["config"]["samples"]:
+            skipped["reason"] = skipped["reason"].replace(sample["path"], "[local source]")
+    return value
+
+
+def write_report(result: dict[str, Any], directory: Path) -> Path:
+    assets = Path(__file__).parent / "assets"
+    payload = json.dumps(public_result(result), ensure_ascii=True, allow_nan=False).replace(
+        "<", "\\u003c"
+    )
+    template = (assets / "report.html").read_text(encoding="utf-8")
+    script = (assets / "report.js").read_text(encoding="utf-8").replace("</script", "<\\/script")
+    report = directory / "report.html"
+    report.write_text(
+        template.replace("__RESULTS__", payload).replace("__APP__", script), encoding="utf-8"
+    )
+    fields = [
+        "id",
+        "sample",
+        "encoder",
+        "quality",
+        "pixel_format",
+        "vmaf",
+        "vmaf_p5",
+        "ssim",
+        "bytes",
+        "encode_seconds",
+    ]
+    with (directory / "trials.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(result["trials"])
+    summary = [
+        "# ArchiveBench results",
+        "",
+        f"Status: {result['status']}",
+        "",
+        "VMAF is a model score, not a percentage of original quality. Compare within one format group.",
+        "",
+        "| Sample | Encoder | Quality control | VMAF | SSIM | MiB | Encode seconds |",
+        "|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for row in result["trials"]:
+        summary.append(
+            f"| {row['sample']} | {row['encoder']} | {row['quality']} | {row['vmaf']:.2f} | {row['ssim']:.4f} | {row['bytes'] / 1024**2:.2f} | {row['encode_seconds']:.2f} |"
+        )
+    summary.extend(
+        [
+            "",
+            "Measured encoding excludes scoring, previews, hashes and archive verification.",
+            "Duration projections are linear estimates from short samples; audio is excluded.",
+            "Original 4:2:2 chroma is normalized for scoring a 4:2:0 output; VMAF does not quantify lost chroma detail.",
+            f"Skipped/failed configurations: {len(result['skipped'])}.",
+        ]
+    )
+    (directory / "summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
+    return report
