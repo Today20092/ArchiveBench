@@ -6,7 +6,7 @@ Use the saved configuration and canonical `results.json` as the source of experi
 
 Preserve originals during benchmarking and archive encoding. Cleanup is a separate user-authorized action after visual review; keep hash, boundary, savings and decode checks intact.
 
-For code changes, run pytest, Ruff format/check, ty and the report math tests. For report changes, rebuild the bundled JS and run the offline browser check. Keep generated media, local configs, logs and private paths out of Git.
+For code changes, run pytest, Ruff format/check, ty and the report math tests through the commands in [docs/development.md](docs/development.md). Pin uv to Python 3.11 for the minimum-runtime check. For report changes, rebuild the bundled JS and run the offline browser, native-still and playback checks. Keep generated media, local configs, logs and private paths out of Git.
 
 ## Agent skills
 
