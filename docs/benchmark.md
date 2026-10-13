@@ -55,4 +55,4 @@ Only one process may use a run or archive folder at a time. A `.lock` file recor
 
 ## Share a report
 
-The HTML report includes results, previews and bundled TanStack Charts. It opens from disk without a server or network requests. Review labels and images before sharing; they may reveal project names or private footage. Raw `results.json` contains local paths. Share the redacted HTML rather than raw results when those paths should remain private.
+The HTML report includes results, embedded fallback previews and bundled TanStack Charts. It opens from disk without a server or network requests. Keep the adjacent `review/` folder with it for companion playback and native stills. Review labels and images before sharing; they may reveal project names or private footage. Raw `results.json` contains local paths. Share the redacted HTML and reviewed companion assets rather than raw results when those paths should remain private.

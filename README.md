@@ -70,7 +70,7 @@ This project was built with AI coding agents. You can ask your agent to install 
 
 ## Sharing results
 
-Share the HTML report after checking its labels and preview images for private content. Raw `results.json` contains local paths. Source paths are redacted in the HTML; labels and images are not.
+Share the HTML report after checking its labels and preview images for private content. Include its `review/` folder for companion playback and native stills; without it, those controls show missing assets. Raw `results.json` contains local paths. Source paths are redacted in the HTML; labels and images are not.
 
 ## Development
 
