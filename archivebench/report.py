@@ -3,6 +3,7 @@
 import csv
 import json
 import re
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -63,11 +64,29 @@ def public_result(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_report(result: dict[str, Any], directory: Path) -> Path:
+    from .review import saved_reviews
+
     assets = Path(__file__).parent / "assets"
     payload = json.dumps(public_result(result), ensure_ascii=True, allow_nan=False).replace(
         "<", "\\u003c"
     )
     template = (assets / "report.html").read_text(encoding="utf-8")
+    reviews = saved_reviews(directory)
+    decisions = (
+        '<section class="section" aria-label="Saved visual decisions"><h2>Saved visual decisions</h2><p>User attestations, separate from metric validation. Invalid decisions cannot support replacement.</p><ul>'
+        + "".join(
+            "<li>"
+            + escape(
+                f"{record['trial']}: {record['decision']} ({record['status']}, {record['method']}) by {record['reviewer']}; objection seconds {record['objections']}. {record['note']}"
+            )
+            + "</li>"
+            for record in reviews
+        )
+        + "</ul></section>"
+        if reviews
+        else ""
+    )
+    template = template.replace("<footer>", decisions + "<footer>")
     script = (assets / "report.js").read_text(encoding="utf-8").replace("</script", "<\\/script")
     report = directory / "report.html"
     report.write_text(

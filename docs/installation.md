@@ -49,6 +49,23 @@ Follow [AGENTS.md](../AGENTS.md) and the [agent workflow](agent-workflow.md) whe
 
 ## Check the environment
 
+### Optional native visual review
+
+Install [video-compare](https://github.com/pixop/video-compare) independently and put its executable on PATH. ArchiveBench does not bundle this GPL-2.0 program. Missing viewer support leaves the existing browser report, stills and converted playback available.
+
+```powershell
+archivebench review inspect --results runs/first-test/results.json --trial TRIAL_ID
+archivebench review launch --results runs/first-test/results.json --trial TRIAL_ID
+archivebench review record --results runs/first-test/results.json --trial TRIAL_ID --decision reject --reviewer "Editor" --method native --objections "0.5,1.2" --note "Artifacts around hair"
+archivebench review inspect --results runs/first-test/results.json
+```
+
+Choose the exact trial ID from `results.json`. Launch checks hashes and decoded frame timestamps/counts, frame rate and dimensions of the source interval reference and measured encode. Both paths must remain inside the benchmark folder. It uses argument arrays rather than shell commands. Saved `visual-reviews.json` decisions remain separate from metrics and appear in regenerated reports; changed media or interval identities invalidate them. Objection timestamps are relative to the reviewed sample, not the full source. Recording is your attestation that you reviewed the footage; launching does not record acceptance.
+
+The viewer receives exact files with automatic options/filter insertion and tone mapping disabled. YUV/RGB conversion and display scaling still occur. Inspect color tags and use an independently verified viewing transform for Log/HDR material; no grading-fidelity guarantee is provided. Default display is 8-bit. `--display-bits 10` requests the viewer's 10-bit path, but does not certify monitor/driver fidelity. The viewer is silent: retained audio needs a separate listening check. Browser previews convert to 8-bit 4:2:0 and cannot establish original 10-bit or chroma fidelity.
+
+The tested Windows synthetic smoke used a 3-second 24 fps, 640×360 10-bit 4:2:0 FFV1 reference and HEVC candidate with moving markers/frame numbers. Both decoded 72 aligned frames. An actual native window showed matching positions and timestamps; requested 10-bit rendering reported an ARGB2101010 video surface. This is display-path smoke evidence, not camera-footage quality acceptance or a physical 10-bit/HDR monitor certification.
+
 `doctor` lists the FFmpeg version, `libvmaf` presence and configured encoders. A listed GPU encoder still needs a successful compatibility probe during the benchmark. Drivers, devices and the selected pixel format can make an encoder unusable.
 
 If `doctor` cannot find FFmpeg/ffprobe, fix PATH and open a new terminal. If `libvmaf` is absent, select a build containing it before running quality tests. An unavailable GPU encoder is a reported failed probe; it does not justify silently changing Match source to a lower-chroma format.
