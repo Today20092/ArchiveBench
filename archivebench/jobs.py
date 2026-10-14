@@ -5,6 +5,7 @@ import json
 import math
 import shutil
 from contextlib import contextmanager
+from fractions import Fraction
 from uuid import uuid4
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,9 @@ def preflight_scratch(output: Path):
     try:
         yield scratch
     finally:
-        shutil.rmtree(safe(scratch, parent))
+        if safe(scratch, parent) != scratch:
+            raise ValueError("Preflight scratch path changed")
+        shutil.rmtree(scratch)
 
 
 def relative_path(value: str) -> str:
@@ -209,7 +212,7 @@ def inspect_job(
                     )
                     if key in video
                 }
-                characteristics["fps"] = video.get("avg_frame_rate", video.get("r_frame_rate"))
+                characteristics["fps"] = str(Fraction(video["avg_frame_rate"]))
                 scope = inspect_preset(
                     item.get("preset", job["preset"]), {"footage": [characteristics]}
                 )

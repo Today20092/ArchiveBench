@@ -54,6 +54,14 @@ A separate explicit `$archivebench` execution smoke requested synthetic job exec
 
 ## Repeatable evaluation recipe
 
+### Resolved restricted-client execution check
+
+After replacing private temporary-directory permissions with a unique job-owned scratch folder that inherits its output ancestor's permissions, actual restricted Codex CLI execution passed. Filesystem and timeout failures now stop visibly instead of declaring valid footage unsupported. Scratch paths are bounded and checked before removal; no ACL grant or sandbox bypass was used.
+
+The first fixed-wheel explicit skill run completed in 115.81 seconds. Actual command events and the manifest showed one full synthetic archive encode, a verified output with 78.4% savings, and a second run skipping that completed output. Source and output hashes and output modification time remained unchanged; the keep-original exception survived. Acceptance inspection had no human attestations and cleanup preview listed zero eligible replacements. Short compatibility probes still run during resume and are separate from full encodes.
+
+A second installed-wheel restricted-client check completed in 104.55 seconds and verified the resume/acceptance/cleanup-preview path again. These pipeline checks resolve the earlier execution blocker; they do not establish visual acceptance, real-camera quality or broad skill superiority. The earlier failed attempts remain historical evidence. A later redundant confirmation attempt was stopped during coordination and is not counted as a completed check. Matching and mismatched footage scope, normalized frame rate, measured estimates and review references are additionally covered at the actual report-export/job boundary.
+
 Use two fresh unrelated directories and install the same wheel/toolchain in both. Give both identical synthetic inputs and shipped CLI documentation, with the actual installed skill only in one arm. Inventory discovered skills; disable any global ArchiveBench copy only through invocation-local settings in the baseline. Use the same neutral request covering fresh setup, reuse on changed footage and unsupported preservation, or separate those cases when a working client/model is available. Keep an explicit `$archivebench` trial separately labeled from implicit activation.
 
 Bound owned process trees, retain actual commands/exits/canonical artifacts and fixture hashes, and grade scope disclosure, measured repeats/encoder work, truthful evidence, exact settings, exceptions and preservation. Do not grade self-reported success as evidence. Record failed attempts, missing metrics and inherited configuration. A successful keep-original recommendation can be correct. Run more repetitions before making broad benefit claims; one pair is only a smoke comparison.

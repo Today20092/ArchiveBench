@@ -176,7 +176,9 @@ def test_report_export_rates_and_scope_reach_job_preflight(tmp_path):
     result = {
         "identity": "benchmark",
         "config": {"samples": [{}], "pixel_format": "source"},
-        "samples": [{"id": "sample-1", "seconds": 1, "video": {"width": 32, "height": 32}}],
+        "samples": [
+            {"id": "sample-1", "seconds": 1, "video": {"width": 32, "height": 32, "fps": "10"}}
+        ],
         "trials": [
             {
                 "id": "trial",
@@ -216,6 +218,16 @@ def test_report_export_rates_and_scope_reach_job_preflight(tmp_path):
     assert row["estimates"]["video_bytes"] == 1000
     assert row["estimates"]["encode_seconds"] == 2
     assert json.loads(preset.read_text())["scope"]["footage"][0]["width"] == 32
+    result["samples"][0]["video"] = {"width": 64, "height": 64, "fps": "10"}
+    exported = subprocess.run(
+        ["node", "--input-type=module", "-e", script, json.dumps(result)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    preset.write_text(exported)
+    row = inspect_job(create_job(source, tmp_path / "output", preset))["files"][0]
+    assert row["footage_scope"] == "matches historical scope"
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")

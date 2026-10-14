@@ -20,8 +20,6 @@ def test_status_labels_saved_running_checkpoint(tmp_path, monkeypatch, capsys):
     assert value["completed_trials"] == 4
 
 
-
-
 def test_initial_plan_is_bounded_and_discloses_choices(tmp_path, monkeypatch, capsys):
     source = tmp_path / "clip.mov"
     source.touch()

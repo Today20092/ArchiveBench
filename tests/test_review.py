@@ -149,6 +149,18 @@ def test_terminal_review_and_report_preserve_decisions_safely(review_run, monkey
     assert "accept (current, browser)" in html
     assert "&lt;script&gt;unsafe&lt;/script&gt;" in html
     assert "<script>unsafe</script>" not in html
+    payload = json.loads(html.split('id="data" type="application/json">')[1].split("</script>")[0])
+    evidence = payload["visual_reviews"][0]
+    assert evidence["status"] == "current"
+    assert evidence["candidate_sha256"] == result["trials"][0]["sha256"]
+    assert "path" not in json.dumps(evidence)
+    candidate = review_run / "sample-1" / "candidate with spaces.mkv"
+    candidate.write_bytes(candidate.read_bytes() + b"changed")
+    invalid_html = write_report(result, review_run).read_text(encoding="utf-8")
+    invalid = json.loads(
+        invalid_html.split('id="data" type="application/json">')[1].split("</script>")[0]
+    )
+    assert invalid["visual_reviews"][0]["status"] == "invalid"
 
 
 def test_native_alignment_rejects_different_frame_count(review_run):
