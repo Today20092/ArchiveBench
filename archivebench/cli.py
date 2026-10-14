@@ -13,6 +13,7 @@ from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings
+from .review import inspect_review, launch_review, record_review, saved_reviews
 
 
 def wizard(config_path: Path) -> None:
@@ -198,9 +199,48 @@ def main() -> None:
     preset.add_argument(
         "--context", type=Path, help="Optional actual compatibility and footage observations"
     )
+    review = commands.add_parser(
+        "review", help="Launch exact native comparison or save user visual decisions"
+    )
+    review.add_argument("operation", choices=("inspect", "launch", "record"))
+    review.add_argument("--results", type=Path, required=True)
+    review.add_argument("--trial")
+    review.add_argument("--viewer", default="video-compare")
+    review.add_argument("--display-bits", type=int, choices=(8, 10), default=8)
+    review.add_argument("--decision", choices=("accept", "reject"))
+    review.add_argument("--reviewer", default="")
+    review.add_argument("--method", choices=("native", "browser", "editor"), default="native")
+    review.add_argument("--objections", default="", help="Comma-separated sample-relative seconds")
+    review.add_argument("--note", default="")
     args = parser.parse_args()
     try:
-        if args.command == "preset":
+        if args.command == "review":
+            directory = args.results.resolve().parent
+            if args.results.name != "results.json":
+                raise ValueError("Choose canonical results.json")
+            if args.operation == "inspect":
+                value = (
+                    inspect_review(directory, args.trial)
+                    if args.trial
+                    else saved_reviews(directory)
+                )
+            elif not args.trial:
+                raise ValueError("Choose --trial from results.json")
+            elif args.operation == "launch":
+                value = launch_review(directory, args.trial, args.viewer, args.display_bits)
+            else:
+                value = record_review(
+                    directory,
+                    args.trial,
+                    args.decision,
+                    args.reviewer,
+                    [float(item.strip()) for item in args.objections.split(",") if item.strip()],
+                    args.note,
+                    args.method,
+                )
+                write_report(json.loads(args.results.read_text(encoding="utf-8")), directory)
+            print(json.dumps(value, indent=2))
+        elif args.command == "preset":
             document = json.loads(args.document.read_text(encoding="utf-8"))
             settings = resolve_settings(document)
             if args.operation == "inspect":
