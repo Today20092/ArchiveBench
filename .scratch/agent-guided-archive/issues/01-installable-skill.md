@@ -1,6 +1,6 @@
 # Installable agent skill
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: none
 
@@ -29,4 +29,10 @@ Validate skill metadata/references and run a documented smoke walkthrough outsid
 ## Comments
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+
+Implemented a canonical `skills/archivebench` package with branch-specific local references, included in the wheel, plus the `archivebench-skill --destination` installer. Existing installs are preserved. The portable workflow calls the shared CLI and labels release-dependent preset/job/review operations rather than claiming unavailable commands. Client-specific installation and smoke cases are in docs/installation.md and docs/skill-smoke.md.
+
+TDD: the public outside-checkout installation test failed before the module existed and passes after implementation, including linked-resource resolution, CLI invocation and overwrite refusal. Official skills-ref and the local skill-creator validator pass. A newly built wheel installed into a fresh Python 3.11 environment successfully installed its skill and invoked doctor/help from an unrelated directory. Four activation and three unrelated cases were walked through for routing coverage; paired model execution remains ticket 07, and cross-client execution support is not claimed.
+
+Checks: focused test passes; Ruff formatting/check and ty pass; build passes; 14 report math tests and 2 playback tests pass. Full regression returned 50 passed and 4 failed legacy tiny-budget validation tests under simultaneous test/render load, including one synthetic-source FFmpeg failure. Global regression must be serialized and completed on the integration branch before this ticket is marked done. Report sources were unchanged; a rebuilt bundle had only line-ending churn and was restored. No camera files or active benchmark processes were changed.
 

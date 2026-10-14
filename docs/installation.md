@@ -54,3 +54,19 @@ Follow [AGENTS.md](../AGENTS.md) and the [agent workflow](agent-workflow.md) whe
 If `doctor` cannot find FFmpeg/ffprobe, fix PATH and open a new terminal. If `libvmaf` is absent, select a build containing it before running quality tests. An unavailable GPU encoder is a reported failed probe; it does not justify silently changing Match source to a lower-chroma format.
 
 For the benchmark, saved `ffmpeg` and `ffprobe` fields can select explicit executable paths. They remain local configuration data. Agent-operated archive and cleanup jobs also need the chosen tools available on PATH.
+
+## Install the optional agent skill
+
+Wheels built from this revision include the portable `archivebench` skill and all its references. Earlier published wheels may predate the installer; use the source-checkout route until a release containing it is available. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
+
+```powershell
+archivebench-skill --destination PATH_TO_CLIENT_SKILLS
+```
+
+For a source checkout, use `uv run archivebench-skill --destination PATH_TO_CLIENT_SKILLS`. The installer creates an `archivebench` subfolder and refuses to overwrite an existing skill. Review an existing installation before replacing it. Keep the installed skill and tool from the same release.
+
+Choose the discovery directory using your client's documentation; clients use their own locations and may require a reload or enable step. No client configuration is modified by this installer. See the [Agent Skills client list](https://agentskills.io/clients) for links to client instructions. Format compatibility does not establish execution support: the agent needs local filesystem and terminal access plus the installed ArchiveBench and FFmpeg tools. A web-only agent without these capabilities cannot process local footage through the skill.
+
+Verify discovery in your client by invoking `$archivebench` with a completed-project archival request. Ask it to locate the command, inspect its help and run `archivebench doctor` before proposing an encode. The skill should also activate for archive-codec comparisons or preset reuse, and should not activate for ZIP archives, image compression or ordinary delivery exports. These are suggested behavioral smoke cases, not a claim that every client has been tested.
+
+The [packaged skill](../skills/archivebench/SKILL.md) contains the shared decision workflow. Client-specific installation details live here. Terminal users can continue directly with the command and do not need the skill.
