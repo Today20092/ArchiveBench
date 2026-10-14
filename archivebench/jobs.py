@@ -166,6 +166,11 @@ def inspect_job(
         else:
             try:
                 info = probe(path, ffprobe)
+                from .acceptance import preservation_gaps
+
+                gaps = preservation_gaps(path, info)
+                if gaps:
+                    raise ValueError("; ".join(gaps))
                 if any(
                     stream["codec_type"] not in ("video", "audio", "subtitle", "attachment")
                     or stream.get("disposition", {}).get("attached_pic")

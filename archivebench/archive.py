@@ -463,7 +463,44 @@ def cleanup(
     path = safe(output_root / "archive-manifest.json", output_root)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if "job" in manifest:
-        raise ValueError("Job cleanup requires recorded visual/editor acceptance")
+        from .acceptance import inspect_acceptance
+
+        state = inspect_acceptance(output_root, ffmpeg, ffprobe)
+        print(
+            f"Cleanup review: {len(state['eligible'])} accepted replacements. Deletion is permanent."
+        )
+        for item in state["eligible"]:
+            print(item["source"])
+        for gap in state["gaps"]:
+            print(gap)
+        if not execute:
+            print("Record job visual/editor acceptance, then separately use --execute --reviewed.")
+            return
+        if not reviewed or not state["eligible"]:
+            raise ValueError("Job cleanup requires current visual/editor acceptance and --reviewed")
+        lock = output_root / ".lock"
+        with lock.open("x") as stream:
+            stream.write(str(os.getpid()))
+        try:
+            # Recheck the whole selection under the job lock before deleting any file.
+            current = inspect_acceptance(output_root, ffmpeg, ffprobe)
+            if current["binding"] != state["binding"] or current["eligible"] != state["eligible"]:
+                raise ValueError("Job acceptance changed during cleanup")
+            for item in current["eligible"]:
+                if (
+                    digest(Path(item["source"])) != item["source_hash"]
+                    or digest(Path(item["output"])) != item["output_hash"]
+                ):
+                    raise ValueError("Files changed during cleanup checks")
+            for item in current["eligible"]:
+                Path(item["source"]).unlink()
+                for record in manifest["records"]:
+                    if record["source"] == item["source"]:
+                        record["status"] = "original_deleted"
+                save(path, manifest)
+        finally:
+            lock.unlink(missing_ok=True)
+        return
     validate_settings(manifest["settings"])
     if manifest["version"] != 1 or manifest["output_root"] != str(output_root):
         raise ValueError("Invalid cleanup manifest")

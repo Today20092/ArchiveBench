@@ -1,6 +1,6 @@
 # Editor reopening and replacement acceptance
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: 04-native-review, 05-reusable-jobs
 
@@ -28,4 +28,6 @@ Cleanup eligibility/invalidation and no-delete-on-failure tests; retained metada
 ## Comments
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+
+Implemented job-specific inspect/record acceptance commands, deterministic mappings, per-record exception settings, preservation gaps and whole-selection cleanup gate. Focused real-FFmpeg tests cover separate decisions, output/settings invalidation, two-file no-delete-on-failure and unmet requirements; integration checks remain owned by root. Demonstrated disposable Resolve Studio 21.1.1.10 project copy with HEVC Main10 MKV and four mono PCM tracks, save/close/reopen, candidate references and timeline boundaries; native playback frame/audio meters observed. No subjective human acceptance or camera changes. See docs/editor-acceptance.md for the bounded claim and remaining manual acceptance. Local QA artifacts retained outside Git under the shared notes evidence directory.
 

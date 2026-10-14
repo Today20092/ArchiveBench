@@ -1,5 +1,7 @@
 # Archive files and review cleanup
 
+For reusable folder jobs, follow [editor reopening and replacement acceptance](editor-acceptance.md). The job workflow requires recorded visual and editor decisions bound to verified output identities before separate cleanup. Legacy manifests keep their existing documented handling.
+
 ## Reusable project jobs
 
 The installed runner accepts any source and destination folders. A portable preset contains
