@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>When a setting qualifies</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px; background: #f5f5f5; color: #2d3142; font-family: 'Geist', system-ui, sans-serif; }
+    .frame { width: 100%; max-width: 960px; min-width: 0; margin: auto; }
+    h1 { font: 400 28px 'Instrument Serif', serif; }
+    p { line-height: 1.6; }
+    a { color: #2e5aa8; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    svg { width: 100%; min-width: 960px; display: block; }
+    .node { fill: #f5f5f5; stroke: #4f5d75; stroke-width: 1.5; }
+    .focal { fill: #f5f5f5; stroke: #bf4520; stroke-width: 2; }
+    .name { font: 600 12px 'Geist', system-ui, sans-serif; fill: #2d3142; }
+    .detail { font: 400 11px 'Geist', system-ui, sans-serif; fill: #4f5d75; }
+    .label { font: 400 8px 'Geist Mono', ui-monospace, monospace; fill: #4f5d75; }
+    .title { font: 400 28px 'Instrument Serif', serif; fill: #2d3142; }
+    .edge { fill: none; stroke: #4f5d75; stroke-width: 1.5; marker-end: url(#recommendation-flow-arrow); }
+    @media print { .diagram-container { overflow-x: visible; } svg { min-width: 0; } }
+  </style>
+</head>
+<body>
+  <main class="frame">
+    <h1>When a setting qualifies</h1>
+    <p>ArchiveBench checks each quality level separately. One passing scene cannot cover a failed or missing scene.</p>
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="recommendation-flow-title recommendation-flow-desc">
+        <title id="recommendation-flow-title">When a setting qualifies</title>
+        <desc id="recommendation-flow-desc">After screening, a setting must pass every required tuning and fresh validation sample at a target before it becomes a validated project recommendation.</desc>
+        <defs><marker id="recommendation-flow-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#4f5d75"/></marker></defs>
+        <rect width="960" height="680" fill="#f5f5f5"/>
+        <text class="title" x="40" y="48">Complete evidence at each quality target</text>
+        <text class="detail" x="40" y="76">Screen compatible encoders first. Retain failures in the results.</text>
+        <path class="edge" d="M 320 164 V 196"/>
+        <path class="edge" d="M 320 288 V 332"/>
+        <path class="edge" d="M 460 244 H 644"/>
+        <path class="edge" d="M 320 388 V 408"/>
+        <path class="edge" d="M 460 456 H 644"/>
+        <path class="edge" d="M 320 504 V 532"/>
+        <rect class="node" x="140" y="108" width="360" height="56" rx="6"/>
+        <text class="name" x="156" y="132">Measure the same setting across tuning samples</text>
+        <text class="detail" x="156" y="152">Keep encoder, quality control and format variant fixed.</text>
+        <polygon class="node" points="320,200 460,244 320,288 180,244"/>
+        <text class="name" x="320" y="240" text-anchor="middle">Every tuning sample</text>
+        <text class="name" x="320" y="256" text-anchor="middle">passes the target?</text>
+        <rect class="node" x="648" y="212" width="272" height="64" rx="6"/>
+        <text class="name" x="664" y="236">No project recommendation</text>
+        <text class="detail" x="664" y="256">Unmet, failed or incomplete evidence.</text>
+        <rect class="node" x="140" y="336" width="360" height="52" rx="6"/>
+        <text class="name" x="156" y="356">Freeze smallest and fastest finalists</text>
+        <text class="detail" x="156" y="376">Test exact settings on fresh validation samples.</text>
+        <polygon class="node" points="320,412 460,456 320,504 180,456"/>
+        <text class="name" x="320" y="452" text-anchor="middle">Every required fresh</text>
+        <text class="name" x="320" y="468" text-anchor="middle">sample passes too?</text>
+        <rect class="node" x="648" y="412" width="272" height="88" rx="6"/>
+        <text class="name" x="664" y="436">Keep the evidence status visible</text>
+        <text class="detail" x="664" y="456">Provisional without fresh validation.</text>
+        <text class="detail" x="664" y="476">Failed or incomplete after a failed check</text>
+        <text class="detail" x="664" y="492">or missing required measurements.</text>
+        <rect class="focal" x="140" y="536" width="360" height="48" rx="20"/>
+        <text class="name" x="156" y="556">Validated project recommendation at this target</text>
+        <text class="detail" x="156" y="576">Visual acceptance still requires your review.</text>
+        <rect x="488" y="220" width="24" height="12" fill="#f5f5f5"/><text class="label" x="492" y="229">No</text>
+        <rect x="336" y="304" width="32" height="12" fill="#f5f5f5"/><text class="label" x="340" y="313">Yes</text>
+        <rect x="488" y="432" width="24" height="12" fill="#f5f5f5"/><text class="label" x="492" y="441">No</text>
+        <rect x="336" y="512" width="32" height="12" fill="#f5f5f5"/><text class="label" x="340" y="521">Yes</text>
+        <text class="detail" x="648" y="560">Passing at 80 does not mean passing at 97.</text>
+        <line x1="40" y1="612" x2="920" y2="612" stroke="#bfc0c0"/>
+        <rect class="node" x="40" y="636" width="16" height="16" rx="2"/>
+        <text class="detail" x="68" y="648">Action or evidence status</text>
+        <polygon class="node" points="332,636 344,644 332,652 320,644"/>
+        <text class="detail" x="356" y="648">Required check</text>
+        <rect class="focal" x="560" y="636" width="16" height="16" rx="8"/>
+        <text class="detail" x="588" y="648">Validated evidence</text>
+      </svg>
+    </div>
+    <p>Validation never tunes the frozen settings. A time budget can leave coverage incomplete. Report controls cannot create evidence.</p>
+    <p><a href="../../README.md">README</a> · <a href="../benchmark.md">Benchmark guide</a> · <a href="../configuration.md">Configuration reference</a></p>
+    <p>The diagram uses Diagram Design's default colours and system font fallbacks. It works offline.</p>
+  </main>
+</body>
+</html>
