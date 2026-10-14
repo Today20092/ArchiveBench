@@ -3,7 +3,7 @@
 Integration branch: `codex/agent-guided-archive`.
 Review baseline: `7491a64327d6f6a86730d0f3c4e8eca5ed34add7`.
 
-The baseline preserves the earlier repeat-count/quality-level changes and approved specification. The original checkout remains on `codex/archivebench-quality-levels` so the running camera benchmark uses unchanged files. Implementation and merges happen in the isolated integration checkout. No public PR is requested; the local Markdown tracker closes tickets by marking done after acceptance and verification.
+The baseline preserves the earlier repeat-count/quality-level changes and approved specification. The original checkout remains on `codex/archivebench-quality-levels` to preserve the historical camera runner unchanged. That experiment is now interrupted with its saved results intact. Implementation and merges happen in the isolated integration checkout. No public PR is requested; the local Markdown tracker closes tickets by marking done after acceptance and verification.
 
 ## Task graph
 
@@ -18,3 +18,5 @@ Tickets01/02 integrated and complete. Combined Python3.11 regression passed 58 t
 Tickets03/04/05 integrated and complete after70 passing Python tests and all required report/browser/still/playback/package checks. Nativeviewer actual synthetic-frame rendering was observed; realcamera quality remains unreviewed. Ticket06 replacement acceptance is now ready. Current integration commit is recorded byGit; no source change was applied to the running camera experiment.
 
 Ticket06 integrated and complete after74 passing Python tests, Ruffformat/check, ty, math15 andpackagebuild. Actual Resolve project-copy reopening and playback evidence was inspected and preserved outside the worktree. Ticket07delivery is now ready. A fresh process check found the historical camera benchmark interrupted with14savedtrials; cause unconfirmed. Its last checkpoint was not rewritten, and a new resume/time allowance was requested separately from implementation. Do not silently restart it.
+
+All seven tickets are complete after delivery, two independent review axes and one final implementer resolved every finding plus the restricted-client scratch failure. The final merged code passed 77 Python tests, Ruff format/check, ty, 16 report math tests, 2 playback tests, fresh synthetic benchmark and offline browser/native-still/package checks. Installed skill discovery, actual restricted-agent encoding/resume, two independent terminal folder jobs and narrow native/editor checks are documented in docs/delivery-evaluation.md. The final wheel matched the isolated installed-wheel hash. Review findings and resolutions are recorded separately by axis in review.md. No original cleanup or public release was performed. The camera benchmark remains stopped pending its separate resume decision.

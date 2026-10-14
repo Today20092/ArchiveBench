@@ -21,4 +21,8 @@ Summary: Standards 2 findings, worst stale activity reporting; Spec 3 findings, 
 
 ## Resolution
 
-Pending final implementation and combined verification. Reviews did not certify subjective camera quality, broader editor compatibility or authorize deletion.
+All five findings were fixed by the single final implementer in `eca3ec4` and `34df0c3`, merged as `a0e303f`. Follow-up review caught and then confirmed correction of equivalent frame-rate scope values (`30` versus `30/1`). Scoped visual references and toolchain identity remain separate from metric qualification; producer/consumer rates and per-file scope have actual report-export/job boundary tests. Saved status explicitly reports unknown live activity. The glossary is updated.
+
+The observed restricted-client scratch failure was also resolved without ACL grants or bypassing its sandbox; operational errors stop visibly instead of being labeled format incompatibility. Actual agent encoding/resume and independent hash checks passed. Scratch cleanup revalidates the bounded nonce path and resolved identity before removal; follow-up source review found no concrete boundary regression.
+
+Combined checks passed: 77 Python tests, Ruff format/check, ty, 16 report math tests, 2 playback tests, rebuilt bundled JavaScript, fresh synthetic benchmark, offline browser, native stills and package builds. Final wheel matched the isolated installed package used for inspection. Reviews and synthetic checks do not certify subjective camera quality, broader editor compatibility or authorize deletion.
