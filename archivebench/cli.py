@@ -13,6 +13,7 @@ from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings
+from .jobs import create_job, run_job
 
 
 def wizard(config_path: Path) -> None:
@@ -198,9 +199,35 @@ def main() -> None:
     preset.add_argument(
         "--context", type=Path, help="Optional actual compatibility and footage observations"
     )
+    job = commands.add_parser("job", help="Create, inspect or run reusable archive folder jobs")
+    job.add_argument("operation", choices=("create", "inspect", "run"))
+    job.add_argument("config", type=Path)
+    job.add_argument("--source", type=Path)
+    job.add_argument("--output", type=Path)
+    job.add_argument("--preset", type=Path)
+    job.add_argument(
+        "--exceptions", type=Path, help="JSON list of explicit relative file exceptions"
+    )
+    job.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     try:
-        if args.command == "preset":
+        if args.command == "job":
+            if args.operation == "create":
+                if args.config.exists() or not all((args.source, args.output, args.preset)):
+                    raise ValueError(
+                        "Choose a new config and supply --source, --output and --preset"
+                    )
+                exceptions = (
+                    json.loads(args.exceptions.read_text(encoding="utf-8"))
+                    if args.exceptions
+                    else []
+                )
+                value = create_job(args.source, args.output, args.preset, exceptions)
+                save(args.config, value)
+                print(args.config)
+            else:
+                run_job(args.config, args.execute if args.operation == "run" else False)
+        elif args.command == "preset":
             document = json.loads(args.document.read_text(encoding="utf-8"))
             settings = resolve_settings(document)
             if args.operation == "inspect":
