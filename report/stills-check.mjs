@@ -27,6 +27,8 @@ try {
   assert.match(await page.locator('#still-review').innerText(),/Native RGB/);
   await page.locator('#still-zoom').fill('4'); await page.locator('#still-zoom').dispatchEvent('input');
   await page.locator('#still-x').fill('100'); await page.locator('#still-x').dispatchEvent('input');
+  assert.equal(await page.locator('#first-frame-review').getAttribute('open'), null);
+  assert.deepEqual(await page.locator('#still-review output').allTextContents(), ['1 of 1 · 0.17 sec','4×','100%','50%']);
   const styles=await page.locator('.still-viewport img').evaluateAll(images=>images.map(img=>[img.style.width,img.style.left,img.style.top]));
   assert.deepEqual(styles,[['400%','-300%','-150%'],['400%','-300%','-150%']]);
   assert.match(await page.locator('#still-review').innerText(),/does not recover detail/);
@@ -45,6 +47,23 @@ try {
     await page.locator('#review-sample').selectOption(measured.sample);
     await page.waitForFunction(()=>[...document.querySelectorAll('.still-viewport img')].every(img=>img.complete&&img.naturalWidth>0));
     assert.deepEqual(await page.locator('.still-viewport img').evaluateAll(images=>images.map(img=>[img.naturalWidth,img.naturalHeight])),[measured.review_stills.moments[0].original,measured.review_stills.moments[0].encoded].map(asset=>[asset.width,asset.height]));
+    for (const button of await page.locator('#weak-moments button').all()) {
+      const seconds = Number(await button.getAttribute('data-seek'));
+      const index = measured.review_stills.moments.findIndex(frame=>Math.abs(frame.seconds-seconds)<0.0001);
+      await button.click();
+      if (index >= 0) {
+        assert.equal(await page.locator('#still-moment').inputValue(), String(index));
+        assert.equal(await page.locator('.still-viewport img').first().getAttribute('src'), measured.review_stills.moments[index].original.path);
+        assert.equal(await page.locator('.still-viewport img').last().getAttribute('src'), measured.review_stills.moments[index].encoded.path);
+        assert.match(await page.locator('#cursor-time').innerText(), /Saved frame displayed/);
+      } else assert.match(await page.locator('#cursor-time').innerText(), /No saved still/);
+      assert.equal(await button.getAttribute('aria-pressed'), 'true');
+    }
+    for (const width of [1440,390]) {
+      await page.setViewportSize({width,height:1000});
+      await page.locator('#still-review').screenshot({path:`runs/demo/still-review-${width}.png`});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    }
   }
   console.log('Still browser checks passed: crop alignment, missing assets, stage selection, narrow/wide layouts.');
 } finally {await browser.close();}
