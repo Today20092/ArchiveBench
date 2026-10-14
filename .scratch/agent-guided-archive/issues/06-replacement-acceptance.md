@@ -1,6 +1,6 @@
 # Editor reopening and replacement acceptance
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: 04-native-review, 05-reusable-jobs
 
@@ -26,6 +26,8 @@ Likely areas: archivebench/archive.py verification/cleanup, job records, cli.py 
 Cleanup eligibility/invalidation and no-delete-on-failure tests; retained metadata/audio tests; manual editor reopen/relink evidence; full required development checks for code changes.
 
 ## Comments
+
+Combined integration validation passed on2026-10-14: Python3.11 pytest74passed, Ruffformat/check andty, reportmath15 andpackagebuild. Prior required report/browser/still/playback checks remain passing; this ticket changes archive/acceptance/CLI/docs rather than report sources. ResolveStudio21.1.1.10 actual synthetic-project-copy replacement, save/close/reopen and native playback were observed; root inspected the frame65 playback screenshot with four audio tracks and active meters. QA evidence is preserved outside the implementer worktree. Human listening and subjective camera-footage acceptance remain explicit future user steps; no fixture user approvals were fabricated. Unsupported camera-data/timecode/sidecar preservation retains originals. Legacy cleanup semantics remain covered.
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
 
