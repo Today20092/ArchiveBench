@@ -79,7 +79,8 @@ def test_launcher_preset_selection_archive_resume_and_changed_snapshot(tmp_path)
     original_job = job.read_bytes()
     preset.write_text(json.dumps({**settings, "quality": 28}))
     changed = powershell(script, source, "-Preset", preset, "-InspectOnly")
-    assert changed.returncode != 0 and "different folders or settings" in changed.stderr
+    assert changed.returncode != 0
+    assert "different folders or settings" in " ".join(changed.stderr.split())
     assert job.read_bytes() == original_job
 
 
