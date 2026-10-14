@@ -15,6 +15,8 @@ No runtime Python dependencies or Node installation are needed to run the instal
 
 Install the wheel from the initial GitHub release:
 
+That URL is the historical release. The skill/preset/job workflow in this revision is not published there yet. For these capabilities use the current source checkout, or build a local wheel with `uv build`, then `uv tool install --python 3.11 dist/archivebench-0.1.0-py3-none-any.whl`. Version 0.1.0 alone does not identify an unreleased revision: retain its source commit and wheel hash. This implementation has not published a new release.
+
 ```powershell
 uv tool install --python 3.11 https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-0.1.0-py3-none-any.whl
 uv tool update-shell
@@ -49,6 +51,8 @@ Follow [AGENTS.md](../AGENTS.md) and the [agent workflow](agent-workflow.md) whe
 
 ## Check the environment
 
+For restricted terminal/agent sessions, provide owned writable scratch. Python preflight uses temporary files; a denied system-temp directory is a capability failure rather than evidence of unsupported video. In a dedicated PowerShell session, create `job-scratch` under your authorized workspace, then set `$env:TMP` and `$env:TEMP` to its absolute path before commands. These assignments affect this process and its children, not global settings. Keep job output and scratch separate from originals. The local Codex workspace-write smoke still denied preflight temporary-directory creation there; relocating scratch alone did not establish working archive execution. Stop dependent operations and report the permission gap rather than treating it as a codec failure or bypassing the sandbox.
+
 ### Optional native visual review
 
 Install [video-compare](https://github.com/pixop/video-compare) independently and put its executable on PATH. ArchiveBench does not bundle this GPL-2.0 program. Missing viewer support leaves the existing browser report, stills and converted playback available.
@@ -73,6 +77,8 @@ If `doctor` cannot find FFmpeg/ffprobe, fix PATH and open a new terminal. If `li
 For the benchmark, saved `ffmpeg` and `ffprobe` fields can select explicit executable paths. They remain local configuration data. Agent-operated archive and cleanup jobs also need the chosen tools available on PATH.
 
 ## Install the optional agent skill
+
+Named-client check: Codex CLI 0.154.0 discovered this wheel's shipped skill in an unrelated project's `.agents/skills/` through `skills/list`. Example: `archivebench-skill --destination .agents/skills` from your project. Initial model execution failed on the inherited account/model combination; the client's advertised default then performed bounded synthetic tasks with implicit skill activation. Discovery alone is not execution proof. Other clients remain unverified. See [delivery evidence](delivery-evaluation.md).
 
 Wheels built from this revision include the portable `archivebench` skill and all its references. Earlier published wheels may predate the installer; use the source-checkout route until a release containing it is available. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
 

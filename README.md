@@ -1,6 +1,6 @@
 # ArchiveBench
 
-Benchmark archival video encodes on your CPU and GPU using your own footage. Compare quality, storage and encoding time in an offline report, then export the settings you want to use for a batch archive.
+Choose archive presets for completed projects using your own footage and hardware. Compare quality, storage and encoding time, review the changes, then apply exact settings to different folders with verified resumable jobs. Use an agent skill or the same commands directly from a terminal.
 
 <p align="center">
   <a href="pyproject.toml"><img alt="Version: 0.1.0" src="https://img.shields.io/badge/Version-0.1.0-C4A7E7?style=for-the-badge&amp;labelColor=493267"></a>
@@ -13,6 +13,8 @@ Benchmark archival video encodes on your CPU and GPU using your own footage. Com
 
 ## Start
 
+Follow the [terminal workflow](docs/terminal-workflow.md), or [install the agent skill](docs/installation.md#install-the-optional-agent-skill). Both use the same commands and evidence.
+
 Windows is the tested platform. macOS/Linux and their hardware encoders remain experimental.
 
 Install [uv](https://docs.astral.sh/uv/) and a full FFmpeg build with `libvmaf`. Put `ffmpeg` and `ffprobe` on PATH. uv can provide Python 3.11. Clone the project for use with an agent or to modify it:
@@ -23,6 +25,7 @@ cd ArchiveBench
 uv sync --locked --python 3.11
 uv run archivebench doctor
 uv run archivebench setup --config local-config.json
+uv run archivebench plan local-config.json
 uv run archivebench benchmark local-config.json --output runs/first-test
 ```
 
@@ -62,7 +65,7 @@ Export settings from the report, review the clips, then follow the [archive and 
 
 ## Use with Codex or Claude
 
-Paste [the agent prompt](docs/AGENT-PROMPT.md) into your agent, pointing it to this checkout. The agent uses the same CLI and saved config. It helps select samples, inspect capabilities, choose a budget and interpret results; thresholds and cleanup remain explicit user decisions. [AGENTS.md](AGENTS.md) provides maintenance rules and links to the run procedure.
+Install the [portable skill](docs/installation.md#install-the-optional-agent-skill) into your client's discovery directory. It guides bounded comparisons, preset reuse, visual decisions and jobs using the same CLI as [terminal users](docs/terminal-workflow.md). A capable agent without the skill can also invoke those tools: the skill supplies procedure, while measurements and verification live in the shared engine. The [agent prompt](docs/AGENT-PROMPT.md) remains a checkout alternative. [AGENTS.md](AGENTS.md) supplies maintenance rules.
 
 ## Why I made it
 

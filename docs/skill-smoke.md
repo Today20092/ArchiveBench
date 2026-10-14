@@ -36,4 +36,4 @@ Use these prompts in a client's discovery test. Review expected routing before e
 | Export a small social-media delivery video. | Do not activate; this is delivery rather than camera-media replacement. |
 | Compress these JPEG images. | Do not activate; this is image compression. |
 
-The initial implementation was walked through against these cases for instruction coverage. No cross-client model discovery claim is made. The end-to-end evaluation ticket owns paired runs with and without the skill and records measured decision completeness, unnecessary encodes and user effort.
+Actual delivery checks discovered the packaged skill in Codex CLI 0.154.0 outside the repository and ran two folder jobs through the installed terminal command. Initial model attempts failed on the inherited model; invocation-local selection of the client's advertised default then demonstrated implicit skill activation, bounded comparisons, preset export and job planning. Scratch permission failures and the baseline timeout remain recorded. See [delivery evidence](delivery-evaluation.md) for exact scope; no other client or universal comparative benefit is claimed.
