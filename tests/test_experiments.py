@@ -3,9 +3,23 @@ import sys
 import shutil
 
 import pytest
-
 from archivebench.cli import main
 from archivebench.core import run
+
+
+def test_status_labels_saved_running_checkpoint(tmp_path, monkeypatch, capsys):
+    (tmp_path / "progress.json").write_text(
+        json.dumps({"status": "running", "completed_trials": 4})
+    )
+    monkeypatch.setattr(sys, "argv", ["archivebench", "status", str(tmp_path)])
+    main()
+    value = json.loads(capsys.readouterr().out)
+    assert value["checkpoint_status"] == "running"
+    assert value["activity"] == "unknown"
+    assert value["last_updated"] is not None
+    assert value["completed_trials"] == 4
+
+
 
 
 def test_initial_plan_is_bounded_and_discloses_choices(tmp_path, monkeypatch, capsys):

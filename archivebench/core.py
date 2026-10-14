@@ -456,7 +456,10 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     unscored_encodes = 0
 
     def publish(phase: str, **details: Any) -> None:
+        from datetime import datetime, timezone
+
         progress.update(details)
+        progress["updated_at"] = datetime.now(timezone.utc).isoformat()
         progress["stage"] = phase
         if phase not in progress["stages_seen"]:
             progress["stages_seen"].append(phase)

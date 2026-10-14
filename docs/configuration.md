@@ -98,7 +98,7 @@ The runner writes MKV. Unsupported data streams and cover art stop a new archive
 
 ## Portable archive presets
 
-The report can export `archive-preset.json` alongside the legacy archive-settings export. A version 1 preset wraps exact settings, a human explanation, historical footage/hardware scope, sample coverage and exclusions. It contains no project source/output roots. Browser visual marks do not become visual acceptance in a preset.
+The report can export `archive-preset.json` alongside the legacy archive-settings export. A version 1 preset wraps exact settings, a measured tradeoff explanation, historical footage/hardware/toolchain scope, sample coverage and exclusions. It contains no project source/output roots. Saved hash-bound visual reviews are exported as section references with current or invalid status; browser visual marks do not become acceptance. Reviewed sections do not imply acceptance of unreviewed footage. Measured video-byte and encode-time rates support historical estimates; retained streams and verification remain excluded.
 
 Terminal users can run `archivebench preset import archive-settings.json --output preset.json --name "HEVC CPU"`, `archivebench preset inspect preset.json`, and `archivebench preset export preset.json --output another-preset.json`. Existing outputs are not overwritten. `archive --settings preset.json --source INPUT --output OUTPUT` uses the same runner on any selected folder. Preset inspection accepts `--context observations.json` with actual `supported_encoders`, `supported_pixel_formats`, footage characteristics and optional `skip_sample_check`. Unsupported hardware/format and untested footage are reported separately. Observations and skipping a check never grant current-project validation.
 

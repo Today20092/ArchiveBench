@@ -67,11 +67,31 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
     from .review import saved_reviews
 
     assets = Path(__file__).parent / "assets"
-    payload = json.dumps(public_result(result), ensure_ascii=True, allow_nan=False).replace(
-        "<", "\\u003c"
-    )
-    template = (assets / "report.html").read_text(encoding="utf-8")
     reviews = saved_reviews(directory)
+    public = public_result(result)
+    public["visual_reviews"] = [
+        {
+            **{
+                key: record.get(key)
+                for key in (
+                    "benchmark_identity",
+                    "trial",
+                    "source_id",
+                    "interval",
+                    "decision",
+                    "method",
+                    "time",
+                    "status",
+                    "objections",
+                )
+            },
+            "candidate_sha256": record.get("candidate", {}).get("sha256"),
+            "reference_sha256": record.get("reference", {}).get("sha256"),
+        }
+        for record in reviews
+    ]
+    payload = json.dumps(public, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c")
+    template = (assets / "report.html").read_text(encoding="utf-8")
     decisions = (
         '<section class="section" aria-label="Saved visual decisions"><h2>Saved visual decisions</h2><p>User attestations, separate from metric validation. Invalid decisions cannot support replacement.</p><ul>'
         + "".join(

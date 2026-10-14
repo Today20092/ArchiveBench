@@ -2,6 +2,21 @@
 
 Terms for comparing archival encodes and deciding which settings to use.
 
+**Archive preset**:
+Portable encoder settings with their explanation, historical measurement scope and references to reviewed sections. A preset does not validate a new project.
+
+**Archive job**:
+A project-specific snapshot of a preset, source/output folders and per-file exceptions. Execution records verification and actual savings without changing the portable preset.
+
+**Historical scope**:
+The tested footage characteristics, hardware, toolchain and sample coverage supporting a preset. Applying the same settings outside this scope needs a confirmation sample check.
+
+**Visual attestation**:
+A person's accepted or rejected decision for specific, hash-bound footage sections. It is separate from measured quality and does not accept unreviewed sections.
+
+**Replacement acceptance**:
+Separate current visual and editor reopening attestations for verified archive outputs. Automated verification alone does not authorize cleanup.
+
 ## Language
 
 **Quality levels**:

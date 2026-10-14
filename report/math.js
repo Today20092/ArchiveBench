@@ -128,11 +128,22 @@ export function archivePreset(result, trial) {
   const samples = result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning');
   const hardware = trial.encoder.startsWith('lib') ? 'CPU' : trial.encoder.split('_').at(-1).toUpperCase();
   const environment = Object.fromEntries(['platform','cpu','logical_cpus','nvidia_gpu_driver_memory'].filter(key => result.environment?.[key] != null).map(key => [key,result.environment[key]]));
+  for (const key of ['ffmpeg','ffprobe']) {
+    const tool = result.tools?.[key] ?? result.environment?.[key];
+    if (tool) environment[key] = {version:tool.version,sha256:tool.sha256};
+  }
   const footage = samples.map(sample => Object.fromEntries(['width','height','pix_fmt','fps','color_space','color_transfer','color_primaries'].filter(key => sample.video?.[key] != null).map(key => [key,sample.video[key]])));
   const codecName = trial.preset_codec ?? (trial.encoder.includes('265') || trial.encoder.includes('hevc') ? 'HEVC' : trial.encoder.includes('av1') || trial.encoder === 'librav1e' ? 'AV1' : trial.encoder.includes('264') ? 'H.264' : 'VP9');
-  return {version:1,type:'archive-preset',name:`${codecName.toUpperCase()} / ${trial.encoder} (${hardware})`,description:'Choose this measured setting when its saved size/time tradeoff and reviewed footage meet your needs. Quality on untested footage is unknown.',settings,
+  const measured = result.trials.filter(row => configurationKey(row) === configurationKey(trial));
+  const reviews = (result.visual_reviews ?? []).filter(review => measured.some(row => row.id === review.trial));
+  const visualStatus = reviews.some(review => review.status === 'current' && review.decision === 'reject') ? 'rejected-sections' : reviews.some(review => review.status === 'current' && review.decision === 'accept') ? 'reviewed-sections' : reviews.length ? 'invalid' : 'unreviewed';
+  const row = configurations(result).find(row => configurationKey(row) === configurationKey(trial));
+  const seconds = samples.filter(sample => measured.some(row => row.sample === sample.id)).reduce((sum,sample)=>sum+sample.seconds,0);
+  const rates = seconds > 0 && row ? {video_bytes_per_second:row.bytes/seconds,encode_seconds_per_second:row.encode_seconds/seconds} : {};
+  const description = `${codecName} using ${trial.encoder} (${hardware}), quality control ${trial.quality}: measured ${row?.bytes ?? trial.bytes} video bytes and ${row?.encode_seconds ?? trial.encode_seconds} encode seconds across ${seconds} sampled seconds, weakest VMAF ${row?.vmaf ?? trial.vmaf}. Metric evidence: ${settings.evidence_status}; visual evidence: ${visualStatus} covers only referenced sections. Untested footage and retained-stream savings are unknown.`;
+  return {version:1,type:'archive-preset',name:`${codecName.toUpperCase()} / ${trial.encoder} (${hardware})`,description,settings,
     encoder_options:trial.preset_encoder_options,
     scope:{environment,footage},
-    evidence:{settings_fingerprint:JSON.stringify(canonical(settings)),benchmark_identity:result.identity ?? null,measurement_status:settings.evidence_status,visual_status:'unreviewed',
-      estimates:{basis:'selected-source video-only projection',coverage:samples.map(sample => ({source_id:sample.source_id ?? sample.id,seconds:sample.seconds,source_seconds:sample.source_seconds ?? null})),exclusions:['retained streams','verification','untested footage']}}};
+    evidence:{settings_fingerprint:JSON.stringify(canonical(settings)),benchmark_identity:result.identity ?? null,measurement_status:settings.evidence_status,visual_status:visualStatus,visual_reviews:reviews,
+      estimates:{basis:seconds > 0 ? 'measured' : 'unknown',...rates,coverage:samples.filter(sample=>measured.some(row=>row.sample===sample.id)).map(sample => ({source_id:sample.source_id ?? sample.id,seconds:sample.seconds,source_seconds:sample.source_seconds ?? null})),exclusions:['retained streams','verification','untested footage']}}};
 }

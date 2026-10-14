@@ -115,7 +115,14 @@ def inspect_preset(
         "compatibility": "unsupported" if unsupported else "not-probed",
         "unsupported": unsupported,
         "footage_scope": "matches historical scope"
-        if footage and all(item in tested for item in footage)
+        if footage
+        and all(
+            any(
+                scope and all(item.get(key) == value for key, value in scope.items())
+                for scope in tested
+            )
+            for item in footage
+        )
         else "untested",
         "sample_check": "skipped by user" if context.get("skip_sample_check") else "recommended",
         "current_project_validated": False,
