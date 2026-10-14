@@ -16,6 +16,7 @@ from .presets import inspect_preset, make_preset, resolve_settings
 from .experiments import experiment_plan
 from .jobs import create_job, run_job
 from .review import inspect_review, launch_review, record_review, saved_reviews
+from .acceptance import inspect_acceptance, record_acceptance
 
 
 def wizard(config_path: Path, comparison: str = "initial") -> None:
@@ -248,9 +249,37 @@ def main() -> None:
     review.add_argument("--method", choices=("native", "browser", "editor"), default="native")
     review.add_argument("--objections", default="", help="Comma-separated sample-relative seconds")
     review.add_argument("--note", default="")
+    acceptance = commands.add_parser(
+        "acceptance", help="Inspect job mapping or record actual visual/editor acceptance"
+    )
+    acceptance.add_argument("operation", choices=("inspect", "record"))
+    acceptance.add_argument("--output", type=Path, required=True)
+    acceptance.add_argument("--kind", choices=("visual", "editor"))
+    acceptance.add_argument("--decision", choices=("accept", "reject"))
+    acceptance.add_argument("--reviewer", default="")
+    acceptance.add_argument("--editor", default="", help="Editor name and version")
+    acceptance.add_argument("--project-copy", default="", help="Reviewed separate project copy")
+    acceptance.add_argument("--note", default="")
+    acceptance.add_argument("--unmet-requirement", action="append", default=[])
     args = parser.parse_args()
     try:
-        if args.command == "plan":
+        if args.command == "acceptance":
+            value = (
+                inspect_acceptance(args.output)
+                if args.operation == "inspect"
+                else record_acceptance(
+                    args.output,
+                    args.kind,
+                    args.decision,
+                    args.reviewer,
+                    editor=args.editor,
+                    project_copy=args.project_copy,
+                    note=args.note,
+                    unmet_requirements=args.unmet_requirement,
+                )
+            )
+            print(json.dumps(value, indent=2))
+        elif args.command == "plan":
             config = json.loads(args.config.read_text(encoding="utf-8"))
             validate_config(config)
             print(json.dumps(experiment_plan(config), indent=2))
