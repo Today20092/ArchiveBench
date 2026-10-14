@@ -78,6 +78,8 @@ For the benchmark, saved `ffmpeg` and `ffprobe` fields can select explicit execu
 
 ## Install the optional agent skill
 
+For preset-based archiving through Explorer, see the optional [Windows Send to installer](windows-send-to.md). It uses the same installed CLI and keeps originals.
+
 Named-client check: Codex CLI 0.154.0 discovered this wheel's shipped skill in an unrelated project's `.agents/skills/` through `skills/list`. Example: `archivebench-skill --destination .agents/skills` from your project. Initial model execution failed on the inherited account/model combination; the client's advertised default then performed bounded synthetic tasks with implicit skill activation. Discovery alone is not execution proof. Other clients remain unverified. See [delivery evidence](delivery-evaluation.md).
 
 Wheels built from this revision include the portable `archivebench` skill and all its references. Earlier published wheels may predate the installer; use the source-checkout route until a release containing it is available. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
