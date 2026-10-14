@@ -9,6 +9,20 @@ test('portable preset exports historical scope without private paths or new vali
  assert.deepEqual(preset.encoder_options,['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p']);
  assert.equal(JSON.stringify(preset).includes('C:/private'),false);
 });
+test('portable measured preset carries scoped review, toolchain and rates',()=>{
+ const result=collection(); const trial=result.trials[0];
+ result.environment={ffmpeg:{version:'test version',sha256:'toolhash',path:'C:/private'}};
+ result.samples[0].seconds=10; trial.bytes=100; trial.encode_seconds=20;
+ result.visual_reviews=[{trial:trial.id,encoder:trial.encoder,quality:trial.quality,variant:trial.variant,status:'current',decision:'accept',source_id:'source-1',interval:{start:0,seconds:10},candidate_sha256:'candidate',reference_sha256:'reference'}];
+ const preset=archivePreset(result,trial);
+ assert.equal(preset.evidence.visual_status,'reviewed-sections');
+ assert.equal(preset.evidence.visual_reviews[0].candidate_sha256,'candidate');
+ assert.equal(preset.scope.environment.ffmpeg.sha256,'toolhash');
+ assert.equal(preset.evidence.estimates.basis,'measured');
+ assert.ok(preset.evidence.estimates.video_bytes_per_second>0);
+ assert.match(preset.description,/VMAF/);
+ assert.equal(JSON.stringify(preset).includes('C:/private'),false);
+});
 test('projections convert seconds/bytes consistently',()=>{const row=project({bytes:1073741824,encode_seconds:40},20,10);assert.equal(row.gib,30);assert.equal(row.minutes,20);});
 test('winner must meet target, not merely be closest',()=>{assert.equal(smallest([{bytes:1,vmaf:90},{bytes:2,vmaf:96}],95).bytes,2);assert.equal(smallest([{bytes:1,vmaf:90}],95),null);});
 test('duration formatting',()=>{assert.equal(durationText(100),'1h 40m');});

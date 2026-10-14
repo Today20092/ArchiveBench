@@ -286,21 +286,27 @@ def main() -> None:
         elif args.command == "status":
             progress = args.output / "progress.json"
             if progress.exists():
-                print(progress.read_text(encoding="utf-8"))
+                value = json.loads(progress.read_text(encoding="utf-8"))
             else:
                 result = json.loads((args.output / "results.json").read_text(encoding="utf-8"))
-                print(
-                    json.dumps(
-                        {
-                            "status": result.get("status", "unknown"),
-                            "stage": result.get("stage", "unknown"),
-                            "completed_trials": len(result.get("trials", [])),
-                            "completed_screens": len(result.get("screening", [])),
-                            "remaining_work": "unknown; older run has no stage telemetry",
-                        },
-                        indent=2,
-                    )
-                )
+                progress = args.output / "results.json"
+                value = {
+                    "status": result.get("status", "unknown"),
+                    "stage": result.get("stage", "unknown"),
+                    "completed_trials": len(result.get("trials", [])),
+                    "completed_screens": len(result.get("screening", [])),
+                    "remaining_work": "unknown; older run has no stage telemetry",
+                }
+            from datetime import datetime, timezone
+
+            value["checkpoint_status"] = value.pop("status", "unknown")
+            value["activity"] = "unknown"
+            value["last_updated"] = (
+                value.get("updated_at")
+                or datetime.fromtimestamp(progress.stat().st_mtime, timezone.utc).isoformat()
+            )
+            value["activity_note"] = "Saved checkpoint; current process activity is not observed."
+            print(json.dumps(value, indent=2))
         elif args.command == "job":
             if args.operation == "create":
                 if args.config.exists() or not all((args.source, args.output, args.preset)):

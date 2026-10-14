@@ -4,8 +4,9 @@ import copy
 import json
 import math
 import shutil
-import subprocess
-import tempfile
+from contextlib import contextmanager
+from fractions import Fraction
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,23 @@ from .archive import archive, candidates, safe
 from .core import color_args, primary, probe, run
 from .encoders import options
 from .formats import output_video, retention, scale_filter
-from .presets import make_preset, resolve_settings
+from .presets import inspect_preset, make_preset, resolve_settings
+
+
+@contextmanager
+def preflight_scratch(output: Path):
+    parent = output
+    while not parent.exists():
+        parent = parent.parent
+    scratch = safe(parent / f".archivebench-preflight-{uuid4().hex}", parent)
+    # Inherit workspace permissions; tempfile's private ACL fails under Windows restricted tokens.
+    scratch.mkdir()
+    try:
+        yield scratch
+    finally:
+        if safe(scratch, parent) != scratch:
+            raise ValueError("Preflight scratch path changed")
+        shutil.rmtree(scratch)
 
 
 def relative_path(value: str) -> str:
@@ -182,9 +199,31 @@ def inspect_job(
                 if sum(stream["codec_type"] == "video" for stream in info["streams"]) != 1:
                     raise ValueError("Multiple video streams require a tested preservation path")
                 video = primary(info)
+                characteristics = {
+                    key: video[key]
+                    for key in (
+                        "width",
+                        "height",
+                        "pix_fmt",
+                        "fps",
+                        "color_space",
+                        "color_transfer",
+                        "color_primaries",
+                    )
+                    if key in video
+                }
+                characteristics["fps"] = str(Fraction(video["avg_frame_rate"]))
+                scope = inspect_preset(
+                    item.get("preset", job["preset"]), {"footage": [characteristics]}
+                )
+                row.update(
+                    footage=characteristics,
+                    footage_scope=scope["footage_scope"],
+                    sample_check=scope["sample_check"],
+                )
                 target = output_video(video, settings)
                 policy = retention(settings)
-                with tempfile.TemporaryDirectory(prefix="archivebench-preflight-") as scratch:
+                with preflight_scratch(output) as scratch:
                     args = [ffmpeg, "-v", "error", "-nostdin", "-i", str(path), "-map", "0:v:0"]
                     audio = [
                         stream for stream in info["streams"] if stream["codec_type"] == "audio"
@@ -244,7 +283,7 @@ def inspect_job(
                         "exclusions": ["retained streams", "verification", "untested footage"],
                         "coverage": evidence.get("coverage", []),
                     }
-            except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            except (ValueError, RuntimeError) as error:
                 row.update(
                     action="keep-original",
                     output=None,
@@ -262,7 +301,7 @@ def inspect_job(
         "preflight": {
             "maximum_frames_per_file": 1,
             "timeout_seconds_per_probe": 30,
-            "scratch": "temporary system folder, removed after each probe",
+            "scratch": "job output ancestor, inherited permissions, removed after each probe",
         },
         "current_project_validated": False,
         "visual_status": "unreviewed",

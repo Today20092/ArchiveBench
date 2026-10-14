@@ -88,6 +88,8 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         config.write_text(json.dumps(job))
         plan = run_job(config)
         assert plan["files"][0]["settings"]["quality"] == 28
+        assert plan["files"][0]["footage_scope"] == "untested"
+        assert plan["files"][0]["sample_check"] == "recommended"
         if name == "first":
             execute_process = subprocess.run
 
@@ -136,6 +138,96 @@ def test_preflight_preserves_unsupported_files(tmp_path):
     assert plan["files"][0]["compatibility"] == "unsupported"
     assert plan["files"][0]["gaps"]
     assert not (tmp_path / "output").exists()
+
+
+def test_preflight_operational_error_is_not_format_incompatibility(tmp_path):
+    source = tmp_path / "project"
+    source.mkdir()
+    (source / "clip.mov").write_bytes(b"original")
+    preset = tmp_path / "preset.json"
+    preset.write_text(json.dumps(settings()))
+    job = create_job(source, tmp_path / "output", preset)
+    with pytest.raises(OSError):
+        inspect_job(job, ffprobe=str(tmp_path / "missing-ffprobe.exe"))
+
+
+@pytest.mark.skipif(
+    not shutil.which("ffmpeg") or not shutil.which("node"), reason="FFmpeg and Node required"
+)
+def test_report_export_rates_and_scope_reach_job_preflight(tmp_path):
+    source = tmp_path / "project"
+    source.mkdir()
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=10",
+            "-t",
+            "1",
+            "-c:v",
+            "ffv1",
+            str(source / "clip.mkv"),
+        ]
+    )
+    result = {
+        "identity": "benchmark",
+        "config": {"samples": [{}], "pixel_format": "source"},
+        "samples": [
+            {"id": "sample-1", "seconds": 1, "video": {"width": 32, "height": 32, "fps": "10"}}
+        ],
+        "trials": [
+            {
+                "id": "trial",
+                "sample": "sample-1",
+                "encoder": "libx264",
+                "quality": 30,
+                "pixel_format": "yuv420p",
+                "bytes": 1000,
+                "encode_seconds": 2,
+                "vmaf": 90,
+                "ssim": 0.99,
+                "preset_encoder_options": [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                    "30",
+                    "-pix_fmt",
+                    "yuv420p",
+                ],
+            }
+        ],
+    }
+    script = "import {archivePreset} from './report/math.js'; const r=JSON.parse(process.argv[1]); console.log(JSON.stringify(archivePreset(r,r.trials[0])));"
+    preset = tmp_path / "preset.json"
+    exported = subprocess.run(
+        ["node", "--input-type=module", "-e", script, json.dumps(result)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    preset.write_text(exported)
+    row = inspect_job(create_job(source, tmp_path / "output", preset))["files"][0]
+    assert row["footage_scope"] == "untested"
+    assert row["sample_check"] == "recommended"
+    assert row["estimates"]["video_bytes"] == 1000
+    assert row["estimates"]["encode_seconds"] == 2
+    assert json.loads(preset.read_text())["scope"]["footage"][0]["width"] == 32
+    result["samples"][0]["video"] = {"width": 64, "height": 64, "fps": "10"}
+    exported = subprocess.run(
+        ["node", "--input-type=module", "-e", script, json.dumps(result)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    preset.write_text(exported)
+    row = inspect_job(create_job(source, tmp_path / "output", preset))["files"][0]
+    assert row["footage_scope"] == "matches historical scope"
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")
