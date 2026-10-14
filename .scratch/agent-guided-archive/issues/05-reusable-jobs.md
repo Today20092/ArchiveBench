@@ -1,6 +1,6 @@
 # Reusable folder jobs and explicit exceptions
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -28,4 +28,16 @@ Two-folder integration test; interruption/resume; changed preset/source/output; 
 ## Comments
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+
+Implemented shared `job create|inspect|run`, embedded immutable preset snapshots, exact-file
+keep-original/stronger-setting exceptions, bounded short encode/mux preflight, mapping/scratch
+and historical video-only estimates. Runner reuses encoding/verification/checkpoints and binds
+the job snapshot in the manifest; each encoded record carries resolved settings. Job cleanup is
+blocked pending ticket06 acceptance. Unsupported data/timecode/cover art or extra video streams
+retain originals. Inspection never grants metric or visual acceptance.
+
+Focused Python 3.11 tests: two-folder execution; interruption/pending checkpoint/resume;
+preset file edits; changed settings/output/source; malformed media; exact keep/stronger
+exceptions and traversal; insufficient actual savings. Ruff and ty passed for touched code.
+Global checks remain for integration. No camera batch or original cleanup performed.
 
