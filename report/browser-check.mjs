@@ -23,7 +23,8 @@ const downloadJSON = async id => {
   return {name:file.suggestedFilename(), data:JSON.parse(await readFile(await file.path(), 'utf8'))};
 };
 const assertTooltipClear = async point => {
-  await point.hover();
+  // Dense quality sweeps can overlap markers; exercise the chart's nearest-point hit test.
+  await point.hover({force:true});
   const tip = page.locator('.benchmark-tooltip:visible');
   await tip.waitFor();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -34,6 +35,11 @@ try {
   await mkdir('runs/demo', {recursive:true});
   await page.setViewportSize({width:1440, height:1100});
   await load(payload);
+  const qualityLevels = payload.config.target_vmafs ?? [payload.config.target_vmaf];
+  assert.equal(await page.locator('[data-quality-target]').count(), qualityLevels.length);
+  await page.locator('[data-quality-target]').first().click();
+  assert.equal(Number(await page.locator('#target').inputValue()), qualityLevels[0]);
+  await page.locator('#reset').evaluate(button => button.click());
   await page.screenshot({path:'runs/demo/chart-first-default.png', fullPage:true});
   assert.equal(await page.locator('.plots .chart svg').count(), 2);
   assert.equal(await page.locator('#rows tr').count() > 0, true);
@@ -116,6 +122,7 @@ try {
   await page.locator('#low-target').fill('100');
   assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#low-target').fill('');
+  await page.locator('#minutes').fill('10000');
   await page.locator('#max-time').fill('0.1');
   assert.match(await page.locator('#recommendation').innerText(), /No validated project recommendation/);
   await page.locator('#reset').click();
@@ -136,6 +143,12 @@ try {
   const settings = await downloadJSON('#export');
   assert.equal(settings.name, 'archive-settings.json');
   assert.equal(settings.data.version, 2); assert.equal(settings.data.audio_mode, payload.config.audio_mode ?? 'copy');
+  const preset = await downloadJSON('#export-preset');
+  assert.equal(preset.name, 'archive-preset.json');
+  assert.equal(preset.data.type, 'archive-preset');
+  assert.deepEqual(preset.data.settings, settings.data);
+  assert.equal(preset.data.evidence.visual_status, 'unreviewed');
+  assert.ok(preset.data.encoder_options.includes('-c:v'));
   const decision = await downloadJSON('#export-decision');
   assert.equal(decision.name, 'archive-decision.json');
   assert.equal(decision.data.selected.samples[0].visually_reviewed, true);
@@ -256,7 +269,7 @@ try {
   heldout.validation_shortlist = [{variant:tuning.variant ?? 'legacy',encoder:tuning.encoder,quality:tuning.quality}];
   heldout.validation_target = 93;heldout.validation_required = 1;heldout.skipped = [];
   await load(heldout);
-  assert.match(await page.locator('#saved-conclusion').textContent(), /validated collection/);
+  assert.match(await page.locator('#saved-conclusion').textContent(), /Validated choices/);
   assert.equal(await page.locator('.recommendation-choice').count(),3);
   assert.match(await page.locator('#recommendation').innerText(), /Smallest file.*Fastest encode.*Highest measured quality/s);
   assert.doesNotMatch(await page.locator('#recommendation').innerText(), /libx265|libsvtav1|libvpx/);

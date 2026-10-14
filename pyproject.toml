@@ -15,6 +15,7 @@ Documentation = "https://github.com/Today20092/ArchiveBench#readme"
 
 [project.scripts]
 archivebench = "archivebench.cli:main"
+archivebench-skill = "archivebench.skill:main"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
@@ -35,6 +36,9 @@ python-version = "3.11"
 
 [tool.hatch.build.targets.wheel]
 packages = ["archivebench"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills/archivebench" = "archivebench/_skill"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/.scratch"]

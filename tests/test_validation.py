@@ -6,7 +6,60 @@ import shutil
 from archivebench.core import benchmark, run, save
 from archivebench.report import public_result
 
-from archivebench.validation import shortlist, validation_sections
+from archivebench.validation import quality_targets, shortlist, validation_sections
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        [],
+        [80, 80],
+        [0],
+        [101],
+        [True],
+        ["90"],
+        [None],
+        [float("nan")],
+        [float("inf")],
+        "80,90",
+        None,
+    ],
+)
+def test_invalid_quality_targets(targets):
+    with pytest.raises(ValueError, match="target_vmafs"):
+        quality_targets({"target_vmafs": targets})
+
+
+def test_quality_targets_and_default_are_explicit():
+    assert quality_targets({"target_vmaf": 93}) == [93]
+    assert quality_targets({"target_vmafs": [97, 80, 95, 90]}) == [80, 90, 95, 97]
+    with pytest.raises(ValueError, match="one of"):
+        quality_targets({"target_vmafs": [80, 90], "target_vmaf": 97})
+
+
+def test_shortlist_deduplicates_targets_and_keeps_low_quality_choices():
+    result = {
+        "config": {"samples": [{}], "target_vmafs": [80, 90, 95, 97]},
+        "samples": [{"id": "sample-1", "seconds": 1}],
+        "trials": [
+            {
+                "variant": "source",
+                "sample": "sample-1",
+                "encoder": "libx264",
+                "quality": q,
+                "vmaf": score,
+                "bytes": size,
+                "encode_seconds": size,
+            }
+            for q, score, size in [(40, 82, 1), (30, 96, 2), (20, 98, 3)]
+        ],
+    }
+    selected = shortlist(result)
+    assert [(c["quality"], c["targets"]) for c in selected] == [
+        (40, [80]),
+        (30, [90, 95]),
+        (20, [97]),
+    ]
 
 
 def test_public_report_redacts_holdout_paths_and_internal_failure_paths():
@@ -76,7 +129,10 @@ def test_shortlist_keeps_smallest_and_fastest_and_rejects_missing_or_weak_scenes
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg integration test")
-def test_fixed_validation_and_resume_never_retune(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "mode,repeats", [("quick", None), ("thorough", None), ("quick", 2), ("thorough", 3)]
+)
+def test_fixed_validation_and_resume_never_retune(tmp_path, monkeypatch, capsys, mode, repeats):
     import archivebench.core as core
 
     source = tmp_path / "source.mkv"
@@ -100,7 +156,7 @@ def test_fixed_validation_and_resume_never_retune(tmp_path, monkeypatch):
     config = {
         "version": 1,
         "profile": "compact",
-        "mode": "quick",
+        "mode": mode,
         "pixel_format": "yuv420p",
         "budget_minutes": 2,
         "target_vmaf": 80,
@@ -109,10 +165,37 @@ def test_fixed_validation_and_resume_never_retune(tmp_path, monkeypatch):
         "validation_samples": [{"path": str(source), "start": 2, "seconds": 1}],
     }
     config_path = tmp_path / "config.json"
+    if repeats is not None:
+        config["encode_repeats"] = repeats
+    if mode == "thorough" and repeats is None:
+        config["target_vmafs"] = [80, 90, 95, 97]
+        config["target_vmaf"] = 97
     save(config_path, config)
+    original_run = core.run
+    encode_calls = {}
+
+    def count_encodes(args, *positional, **kwargs):
+        if "-c:v" in args and str(args[-1]).endswith("encoded.partial.mkv"):
+            output = str(args[-1])
+            encode_calls[output] = encode_calls.get(output, 0) + 1
+        return original_run(args, *positional, **kwargs)
+
+    monkeypatch.setattr(core, "run", count_encodes)
     result = benchmark(config_path, tmp_path / "run")
+    expected_repeats = repeats if repeats is not None else 1
+    output = capsys.readouterr().out
+    assert f"Measured encodes per setting: {expected_repeats}" in output
+    assert {trial["stage"] for trial in result["trials"]} == {"tuning", "validation"}
+    for trial in result["trials"]:
+        assert len(trial["timings"]) == expected_repeats
+        partial = str(Path(trial["output"]).with_name("encoded.partial.mkv"))
+        assert encode_calls[partial] == expected_repeats + 1  # One separate pilot.
     assert result["validation_required"] == 1
     assert result["validation_shortlist"]
+    if "target_vmafs" in config:
+        assert result["validation_targets"] == config["target_vmafs"]
+        assert all(f"searching VMAF {target}" in output for target in quality_targets(config))
+        assert len({trial["id"] for trial in result["trials"]}) == len(result["trials"])
     validation = [trial for trial in result["trials"] if trial["stage"] == "validation"]
     assert validation
     assert {(trial["encoder"], trial["quality"]) for trial in validation} == {
@@ -126,6 +209,13 @@ def test_fixed_validation_and_resume_never_retune(tmp_path, monkeypatch):
     resumed = benchmark(config_path, tmp_path / "run")
     assert resumed["trials"] == result["trials"]
     assert resumed["validation_shortlist"] == result["validation_shortlist"]
+    assert all(count == expected_repeats + 1 for count in encode_calls.values()), (
+        "Resume repeated a measured encode"
+    )
+    config["encode_repeats"] = expected_repeats + 1
+    save(config_path, config)
+    with pytest.raises(ValueError, match="changed"):
+        benchmark(config_path, tmp_path / "run")
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg integration test")

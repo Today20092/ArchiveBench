@@ -4,6 +4,12 @@
 
 ## Choose samples
 
+Start with `archivebench setup --config comparison.json`, then `archivebench plan comparison.json`. Setup defaults to a bounded initial comparison. Choose `--comparison comprehensive` explicitly for the existing wider search; old saved configs retain that behavior. Review selected encoders and controls, intervals, format variants, quality levels, measured repeat count, and work/time bounds before starting. Initial comparisons may leave a quality level unanswered; inspect the evidence and name the remaining comparison before expanding in a new config/output folder.
+
+During a run, `archivebench status OUTPUT_FOLDER` reads a small `progress.json` alongside canonical `results.json`. It distinguishes initialization/source hashing, reference preparation, compatibility screens, pilots, measured encoding, scoring, validation and review generation. Counts identify completed scored trials, full measured encodes, completed/failed screens, and known remaining screens. Adaptive encoding work has an upper bound, not an exact remaining count. Once a validation shortlist is frozen its required trial count is shown; cached successful trials are not re-encoded. Older runs show the available result counts with unavailable telemetry labeled unknown. Status is the last saved observation; it does not certify that a process is still alive after a forced kill.
+
+Actual one-second pilot timing supplies a per-setting sample estimate. Startup overhead, scene complexity and other stages make it approximate; it is not a promised project finish time. Budget exhaustion, incomplete validation and an initial comparison reaching its attempt cap remain explicit. “Completed” means processing finished, not that every requested target qualified. Compare codecs at a common accepted quality, and compare quality changes within an encoder. Conversions stay named separately; storage savings are not additively attributed to codec, speed and quality.
+
 Select short sections with motion, fine detail and dark or noisy footage. Similar clips add less information than varied scenes. Setup lists eligible clips and asks which to include; it does not infer scene diversity. Proxy and generated archive folders are excluded.
 
 Use the saved configuration and canonical `results.json` as the experiment record. JSON, CSV and Markdown results accompany the HTML report. Report controls reinterpret saved measurements; they do not encode new candidates.
@@ -12,20 +18,24 @@ Use the saved configuration and canonical `results.json` as the experiment recor
 
 Configured H.264, H.265, AV1 and VP9 encoders available in FFmpeg get a one-second compatibility/quality screen. Hardware encoders must actually encode the selected format. Unconfigured or failing implementations are reported.
 
-| Mode | Finalists | Quality attempts per finalist | Timed encodes per attempt |
+| Mode | Finalists | Quality attempts per finalist per target | Timed encodes per attempt |
 | --- | ---: | ---: | --- |
-| Quick | Up to 4 | Up to 2 | One |
-| Thorough | Up to 8 | Up to 4 | Three; report the median |
+| Quick | Up to 4 | Up to 2 | `encode_repeats`, default 1 |
+| Thorough | Up to 8 | Up to 4 | `encode_repeats`, default 1 |
+
+Setup asks how many measured encodes to run per setting and saves `encode_repeats`. Choose 1 for one timing measurement, or 2, 3 or another positive integer to measure timing variability. The runner prints this count before measurements. It applies to both tuning and validation, and timing uses the median of the recorded values. Repeating an identical setting does not improve its picture quality. Short compatibility screens and pilots still run separately, and scoring takes additional time.
+
+Compression tuning is different from repeating a timing measurement: it tries different compression settings toward the shared VMAF target. This compares size and speed at a chosen measured quality rather than treating unrelated encoder quality numbers as equivalent. One repeat still allows multiple quality attempts; it does not mean one encode for the whole experiment.
 
 Screens favor near-target quality, then size and time. This heuristic can miss useful encoders; raw screen results are retained. A budget-limited run is a partial search, not proof that the best possible settings were found.
 
 Each quality discovered during tuning becomes a shared candidate. Within the budget, the runner measures that exact encoder, quality and format variant across every prepared tuning sample. The report requires successful measurements meeting the target on every planned sample; averages cannot hide a weak scene. It shows the weakest scene and completed/required coverage. These choices remain provisional pending fresh-footage validation.
 
-Compact starts at VMAF 93 and Editing at 96. These are adjustable model-score targets, not guarantees of viewing quality or grading latitude. Quality-control values are not interchangeable between encoders. Recommend only measured settings that meet the target. Exact encoder commands are defined by the adapters described in the [configuration reference](configuration.md).
+Setup offers VMAF 80, 90, 95 and 97, or a single/custom list. These are adjustable model-score targets, not guarantees of viewing quality or grading latitude. Identical measurements and references are reused across levels; additional levels can still add distinct quality attempts and validation candidates. The report compares measured size, quality and time at each level, with missing/unmet targets explicit. Quality-control values are not interchangeable between encoders. Recommend only measured settings that meet the target. Exact encoder commands are defined by the adapters described in the [configuration reference](configuration.md).
 
 ## Fresh-footage validation and visual review
 
-Setup proposes separate, non-overlapping sections from each selected source for you to review. After tuning, the runner freezes the smallest and fastest qualifying candidates for each variant and tests those exact settings on the fresh sections. A setting becomes validated only after it meets the quality target on every required tuning and validation sample. Failed, incomplete and provisional candidates stay visible with their evidence status.
+Setup proposes separate, non-overlapping sections from each selected source for you to review. After tuning, the runner freezes the smallest and fastest qualifying candidates for each target and variant, deduplicates identical choices, and tests those exact settings on the fresh sections. A setting becomes validated at a target only after it meets that target on every required tuning and validation sample. Passing at 80 does not mean passing at 97. Failed, incomplete and provisional candidates stay visible with their evidence status.
 
 Thirty percent of the budget is reserved for validation by default. Resuming an incomplete run continues the frozen shortlist; validation results never tune its settings. Raising the report's target checks the saved validation scores too.
 

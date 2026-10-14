@@ -1,6 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {project,smallest,durationText,pareto,archiveSettings,configurations,eligible,tradeoff,recommendations} from './math.js';
+import {project,smallest,durationText,pareto,archiveSettings,archivePreset,configurations,eligible,tradeoff,recommendations} from './math.js';
+test('portable preset exports historical scope without private paths or new validation',()=>{
+ const result=collection();result.environment={cpu:'test CPU',private_path:'C:/private'};result.trials[0].preset_encoder_options=['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p'];
+ result.samples[0].video={width:1920,height:1080,pix_fmt:'yuv420p',fps:'30/1',path:'C:/private/clip.mov'};
+ const preset=archivePreset(result,result.trials[0]);
+ assert.equal(preset.type,'archive-preset');assert.equal(preset.evidence.visual_status,'unreviewed');
+ assert.deepEqual(preset.encoder_options,['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p']);
+ assert.equal(JSON.stringify(preset).includes('C:/private'),false);
+});
+test('portable measured preset carries scoped review, toolchain and rates',()=>{
+ const result=collection(); const trial=result.trials[0];
+ result.environment={ffmpeg:{version:'test version',sha256:'toolhash',path:'C:/private'}};
+ result.samples[0].seconds=10; trial.bytes=100; trial.encode_seconds=20;
+ result.visual_reviews=[{trial:trial.id,encoder:trial.encoder,quality:trial.quality,variant:trial.variant,status:'current',decision:'accept',source_id:'source-1',interval:{start:0,seconds:10},candidate_sha256:'candidate',reference_sha256:'reference'}];
+ const preset=archivePreset(result,trial);
+ assert.equal(preset.evidence.visual_status,'reviewed-sections');
+ assert.equal(preset.evidence.visual_reviews[0].candidate_sha256,'candidate');
+ assert.equal(preset.scope.environment.ffmpeg.sha256,'toolhash');
+ assert.equal(preset.evidence.estimates.basis,'measured');
+ assert.ok(preset.evidence.estimates.video_bytes_per_second>0);
+ assert.match(preset.description,/VMAF/);
+ assert.equal(JSON.stringify(preset).includes('C:/private'),false);
+});
 test('projections convert seconds/bytes consistently',()=>{const row=project({bytes:1073741824,encode_seconds:40},20,10);assert.equal(row.gib,30);assert.equal(row.minutes,20);});
 test('winner must meet target, not merely be closest',()=>{assert.equal(smallest([{bytes:1,vmaf:90},{bytes:2,vmaf:96}],95).bytes,2);assert.equal(smallest([{bytes:1,vmaf:90}],95),null);});
 test('duration formatting',()=>{assert.equal(durationText(100),'1h 40m');});
@@ -89,4 +111,18 @@ test('fresh validation requires every holdout at saved target and display change
  result.skipped.push({stage:'validation',variant:'legacy',encoder:'libx264',quality:18,terminal:true});
  assert.equal(configurations(result,1)[0].evidence_status,'failed');
  delete result.validation_shortlist;assert.equal(configurations(result,1)[0].evidence_status,'provisional');
+});
+
+test('quality levels share evidence without claiming a higher target passed',()=>{
+ const trial={id:'t',sample:'sample-1',stage:'tuning',variant:'legacy',encoder:'libx264',quality:30,bytes:100,encode_seconds:1,vmaf:96,ssim:1};
+ const result={identity:'levels',config:{samples:[{}],validation_samples:[{}],target_vmaf:97,target_vmafs:[80,90,95,97]},samples:[{id:'sample-1',seconds:1}],trials:[trial,{...trial,id:'v',stage:'validation',sample:'validation-1',vmaf:92}],skipped:[],validation_required:1,validation_target:97,validation_shortlist:[{variant:'legacy',encoder:'libx264',quality:30,targets:[80,90,95]}]};
+ const rows=configurations(result,1);
+ assert.equal(rows[0].evidence_status,'validated');
+ assert.equal(recommendations(rows,80).length,1);
+ assert.equal(recommendations(rows,90).length,1);
+ assert.equal(recommendations(rows,95).length,0);
+ assert.equal(recommendations(rows,97).length,0);
+ assert.equal(archiveSettings(result,rows[0]).validation_target,80);
+ result.trials.pop();
+ assert.equal(configurations(result,1)[0].evidence_status,'incomplete');
 });
