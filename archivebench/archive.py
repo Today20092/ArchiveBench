@@ -244,7 +244,9 @@ def archive(
         or source_root.is_relative_to(output_root)
     ):
         raise ValueError("Choose distinct source/output folders; output cannot contain source")
-    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    from .presets import resolve_settings
+
+    settings = resolve_settings(json.loads(settings_path.read_text(encoding="utf-8")))
     validate_settings(settings)
     files = [path for path in candidates(source_root) if not path.is_relative_to(output_root)]
     print(

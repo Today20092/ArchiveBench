@@ -23,6 +23,12 @@ Code discovery used the graph for CLI/archive symbols and the archive call chain
 
 ## Decisions for implementation
 
+### Portable preset schema (ticket 02)
+
+Use an `archive-preset` version 1 wrapper around the existing version 2 `archive-settings`: name, description, exact canonical encoder options, footage/environment scope, and evidence with a fingerprint of the settings. Presets contain no source/destination paths or checkpoint state. Legacy settings import with unknown scope and unreviewed evidence. Inspection distinguishes hardware/format incompatibility from untested footage; skipping a check never creates current-project validation. Changing settings invalidates the saved evidence fingerprint. CLI import/inspect/export and a separate report preset export share this contract; legacy report exports remain available.
+
+Public APIs in `archivebench.presets`: `make_preset(settings, name='', description='')`, `resolve_settings(document)` (validates wrapper or legacy settings and returns the archive-settings dict), `inspect_preset(document, context=None)`, and `settings_fingerprint(settings)` (canonical JSON content binding, not an authenticity signature). Inspection context may provide `supported_encoders`, `supported_pixel_formats`, `footage` characteristics and `skip_sample_check`; it always reports `current_project_validated: false`. CLI: `preset import|export INPUT --output NEW_PATH [--name NAME --description TEXT]`; `preset inspect INPUT [--context OBSERVATIONS.json]`. Import/export preserve an existing preset's evidence. `archive --settings PRESET.json` resolves the same settings. Encoding remains derived from supported adapters, never arbitrary preset option execution.
+
 - Extend the existing CLI and archive runner rather than generating a different encoder program for each user. A convenience script may accept preset, source and destination arguments and forward them to the installed command.
 - Keep reusable preset data separate from per-project paths and checkpoints. Snapshot resolved settings into each job so editing a preset cannot silently change a resumed job.
 - Keep the skill small and reference branch-specific instructions. First skill version uses working commands; later tickets extend both interfaces together. Do not document proposed CLI syntax as available functionality.

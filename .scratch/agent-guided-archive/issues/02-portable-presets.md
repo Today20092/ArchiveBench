@@ -1,6 +1,6 @@
 # Portable preset contract and evidence
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: none
 
@@ -26,5 +26,7 @@ Contract round-trip, invalid-input, scope mismatch and legacy regression tests; 
 
 ## Comments
 
-Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+Implemented the version 1 portable preset contract, legacy import and inspection, preset consumption by the existing archive runner, and offline report export. The schema and public seams are recorded in the design. Original camera runs remain unchanged.
+
+Recovery verification: four focused preset tests passed on Python 3.11, including two folder roots using one unchanged preset; Ruff format/check and ty passed; 15 report math tests, offline browser export checks, native still checks and two playback tests passed. The report was regenerated from existing synthetic results before the browser export check. Package build and diff checks passed. Earlier full-suite failures occurred during concurrent camera/test workloads; integration must run a serialized full regression before closing this ticket. No camera quality or actual GPU/editor acceptance claim is made by these synthetic checks.
 

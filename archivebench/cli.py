@@ -12,6 +12,7 @@ from .encoders import SPECS, discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
+from .presets import inspect_preset, make_preset, resolve_settings
 
 
 def wizard(config_path: Path) -> None:
@@ -186,9 +187,38 @@ def main() -> None:
     clean.add_argument("--output", type=Path, required=True)
     clean.add_argument("--execute", action="store_true")
     clean.add_argument("--reviewed", action="store_true")
+    preset = commands.add_parser(
+        "preset", help="Import, inspect or export portable archive presets"
+    )
+    preset.add_argument("operation", choices=("import", "inspect", "export"))
+    preset.add_argument("document", type=Path)
+    preset.add_argument("--output", type=Path)
+    preset.add_argument("--name", default="")
+    preset.add_argument("--description", default="")
+    preset.add_argument(
+        "--context", type=Path, help="Optional actual compatibility and footage observations"
+    )
     args = parser.parse_args()
     try:
-        if args.command == "setup":
+        if args.command == "preset":
+            document = json.loads(args.document.read_text(encoding="utf-8"))
+            settings = resolve_settings(document)
+            if args.operation == "inspect":
+                context = (
+                    json.loads(args.context.read_text(encoding="utf-8")) if args.context else None
+                )
+                print(json.dumps(inspect_preset(document, context), indent=2))
+            else:
+                if args.output is None or args.output.exists():
+                    raise ValueError("Choose a new --output path")
+                value = (
+                    document
+                    if document.get("type") == "archive-preset"
+                    else make_preset(settings, args.name, args.description)
+                )
+                save(args.output, value)
+                print(args.output)
+        elif args.command == "setup":
             wizard(args.config)
         elif args.command == "doctor":
             supported, other = discover(run(["ffmpeg", "-encoders"]))
