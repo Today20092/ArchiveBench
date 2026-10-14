@@ -37,6 +37,8 @@ Legacy imports start with unknown/unreviewed evidence. A codec name alone cannot
 
 ## Apply one preset to different folders
 
+This is the everyday archival stage. Reuse the chosen preset without another benchmark; each folder receives its own job. Windows users can alternatively install the [Send to launcher](windows-send-to.md).
+
 ```powershell
 archivebench job create project-a.json --source PROJECT_A --output ARCHIVE_A --preset preset.json --exceptions exceptions-a.json
 archivebench job inspect project-a.json

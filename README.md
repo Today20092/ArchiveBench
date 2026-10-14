@@ -1,6 +1,6 @@
 # ArchiveBench
 
-Choose archive presets for completed projects using your own footage and hardware. Compare quality, storage and encoding time, review the changes, then apply exact settings to different folders with verified resumable jobs. Use an agent skill or the same commands directly from a terminal.
+ArchiveBench does two things: **benchmark your footage to choose archive presets**, then **use those presets to archive future projects**. Compare encoders on your CPU/GPU, examine the offline report and footage, save the settings you accept, and reuse them on different folders with verified resumable jobs. Use an agent, the terminal or the optional Windows Send to launcher.
 
 <p align="center">
   <a href="pyproject.toml"><img alt="Version: 0.1.0" src="https://img.shields.io/badge/Version-0.1.0-C4A7E7?style=for-the-badge&amp;labelColor=493267"></a>
@@ -9,11 +9,16 @@ Choose archive presets for completed projects using your own footage and hardwar
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-F4C98B?style=for-the-badge&amp;labelColor=75512B"></a>
 </p>
 
-[Install](docs/installation.md) · [Quick start](#start) · [Read the report](#read-the-report) · [Benchmark guide](docs/benchmark.md) · [Settings](docs/configuration.md) · [Archiving](docs/archiving.md) · [Release notes](docs/releases.md) · [Agent prompt](docs/AGENT-PROMPT.md)
+[Install](docs/installation.md) · [Benchmark and choose presets](#start) · [Archive future projects](#archive-future-projects) · [Resume](#resume-an-archive-job) · [Windows Send to](#windows-send-to) · [Read the report](#read-the-report) · [Settings](docs/configuration.md) · [Release notes](docs/releases.md)
 
 ## How it works
 
-Choose footage sections and save an experiment. ArchiveBench measures encoder settings, checks finalists on fresh footage, and writes an offline report. Use the report to choose settings, review the exact encoded clips, then export settings for the optional archive runner.
+| Use | What you do | What you get |
+| --- | --- | --- |
+| **1. Find your presets** | Benchmark representative footage on your computer; compare quality, size and speed; visually inspect candidates. | An offline HTML report with charts, measurements and comparison clips, plus your chosen preset JSON files. |
+| **2. Archive new projects** | Choose a saved preset and a different footage folder. | Smaller verified copies, actual savings and a job checkpoint you can resume. No new benchmark is required. |
+
+For example, approve a higher-quality match-source preset and a smaller 10-bit 4:2:0 preset. Save both in a permanent preset folder, then choose whichever fits each future project. Presets store exact encoder controls, format/audio policy and historical evidence; each project's job stores its own folders and a snapshot of the chosen settings. You can keep using these presets without an agent or API key.
 
 ![ArchiveBench user flow: check tools, save an experiment, benchmark, compare and review, export settings, then archive while keeping originals.](docs/diagrams/user-flow.svg)
 
@@ -22,6 +27,8 @@ Choose footage sections and save an experiment. ArchiveBench measures encoder se
 ## Start
 
 Follow the [terminal workflow](docs/terminal-workflow.md), or [install the agent skill](docs/installation.md#install-the-optional-agent-skill). Both use the same commands and evidence.
+
+This first stage finds settings you like. If you already have a preset, go directly to [archiving a future project](#archive-future-projects).
 
 Windows is the tested platform. macOS/Linux and their hardware encoders remain experimental.
 
@@ -69,7 +76,7 @@ VMAF is a model score, not a percentage of original quality. Measurements cover 
 2. Compare the saved quality levels. The table shows the smallest validated collection choice at each target, its weakest tuning and validation scores, and projected video size and encoding time. Missing or unmet targets stay explicit.
 3. Select a setting from a chart or choice card. Use the two setting selectors to compare size, time and VMAF differences for the same sample coverage. Open the sortable measurements table for details.
 4. Inspect the evidence and footage. Review matched native-size stills at saved low-scoring moments with crop and zoom controls. Use paired playback to inspect motion, then open the exact measured MKV in a native player. Browser review previews use H.264 8-bit 4:2:0 and cannot prove source-format fidelity.
-5. Use the selected-settings handoff to copy an agent prompt or export archive settings and a decision summary. The summary records your active constraints and stated visual-review status. Review marks do not authorize cleanup.
+5. Use **Export reusable preset** to save each choice as a JSON file in your permanent preset folder. Give it a recognizable filename, such as `lumix-higher-quality.json` or `lumix-smaller.json`. The preset carries exact settings, measured evidence, scope and saved visual-review references. Legacy archive-settings exports and decision summaries remain available. Review marks do not authorize cleanup.
 
 The report starts with the selected sources' combined duration. Changing duration scales that source mix to estimate video size and encoding time. Target and duration controls use saved measurements; they do not run new tests or change the saved experiment conclusion. Older results without full source durations show a labeled sample-duration estimate.
 
@@ -83,11 +90,49 @@ Read [the benchmark guide](docs/benchmark.md) for scoring, validation, playback 
 
 See the [configuration reference](docs/configuration.md) for every option. HDR, interlaced and variable-frame-rate footage are unsupported.
 
-Rerun the same command to resume. Changed settings, sources or toolchains require a new output folder. See [restart and budget behavior](docs/benchmark.md#restart-and-budgets).
+For a benchmark, rerun the same command to reuse completed measurements. Changed experiment settings, sources or toolchains require a new output folder. See [restart and budget behavior](docs/benchmark.md#restart-and-budgets). Everyday archive jobs have their own [file-level resume](#resume-an-archive-job).
 
-## Optional archive runner
+## Archive future projects
 
-Export settings from the report, review the clips, then follow the [archive and cleanup guide](docs/archiving.md). The runner writes MKV and keeps originals during encoding. Unsupported streams stop the job. Editor relinking and proprietary metadata need a separate compatibility check.
+Once you have approved presets, ArchiveBench is your archival tool. Tomorrow's project might contain five original clips. Apply today's saved smaller preset without running another benchmark:
+
+```powershell
+archivebench job create "D:\New Project\archive-job.json" `
+  --source "D:\New Project\Originals" `
+  --output "D:\New Project\Archived" `
+  --preset "D:\Archive Presets\lumix-smaller.json"
+
+archivebench job inspect "D:\New Project\archive-job.json"
+archivebench job run "D:\New Project\archive-job.json" --execute
+```
+
+Choose your higher-quality preset instead when that is what you want. For another project, create another job pointing to its source/output folders and reuse either preset. The saved presets remain portable; jobs have independent checkpoints. Editing a preset later does not change an existing job's snapshot.
+
+Inspection shows compatibility, scope, available time/size estimates and exceptions; it runs short scratch probes. Execution encodes the selected files, verifies outputs and records actual savings including retained streams. Outputs are MKV; originals stay intact. Unsupported preservation cases keep originals, and files without worthwhile savings are retained. Consider a short confirmation comparison when footage or hardware differs materially from your tested scope, rather than repeating a full benchmark for every project.
+
+### Resume an archive job
+
+After interruption, run the **same job command again**:
+
+```powershell
+archivebench job run "D:\New Project\archive-job.json" --execute
+```
+
+Verified completed files are checked and skipped. Pending files are encoded; an interrupted file restarts from its beginning. This is file-level resume, not continuation halfway through a video bitstream. Changed sources, outputs or job settings are refused rather than silently mixing results. See the [archive guide](docs/archiving.md) for exceptions, checkpoints and stale-lock handling after an abrupt shutdown.
+
+### Windows Send to
+
+Install the current ArchiveBench command on PATH, save your approved presets in a folder, then optionally install the per-user launcher:
+
+```powershell
+archivebench-send-to --install --preset-directory "D:\Archive Presets"
+```
+
+Right-click **one footage folder → Send to → ArchiveBench** (Windows 11 may require **Show more options**). A console lists your presets. Choose one, inspect the plan, then type `ARCHIVE` to start. The launcher calls the same job engine; it does not benchmark or delete originals.
+
+By default, selecting `Originals` with `lumix-smaller.json` creates the sibling folder `Originals-Archived-lumix-smaller` and its adjacent `.job.json` checkpoint. Send the same folder to ArchiveBench with the same preset again to resume. Choosing a different preset uses a different output/job; changed settings under an existing name are refused. See [installation and removal](docs/windows-send-to.md).
+
+Review replacements and reopen your editing-project copy before reclaiming space. Editor relinking and proprietary metadata need a separate compatibility check.
 
 **Cleanup permanently deletes originals.** It is a separate command after visual review, with hash, decode, stream and savings checks. Benchmarking does not authorize cleanup.
 

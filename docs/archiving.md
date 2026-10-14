@@ -4,6 +4,8 @@ For reusable folder jobs, follow [editor reopening and replacement acceptance](e
 
 ## Reusable project jobs
 
+Once you have chosen presets, use these jobs on future folders without repeating the benchmark. The optional [Windows Send to launcher](windows-send-to.md) performs the same operation through Explorer.
+
 The installed runner accepts any source and destination folders. A portable preset contains
 settings and historical evidence; a local job contains folder paths, an embedded preset snapshot
 and explicit file exceptions. Editing the original preset does not change an existing job.

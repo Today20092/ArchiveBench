@@ -16,6 +16,7 @@ Documentation = "https://github.com/Today20092/ArchiveBench#readme"
 [project.scripts]
 archivebench = "archivebench.cli:main"
 archivebench-skill = "archivebench.skill:main"
+archivebench-send-to = "archivebench.send_to:main"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]
