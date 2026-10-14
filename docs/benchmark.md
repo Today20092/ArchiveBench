@@ -4,6 +4,12 @@
 
 ## Choose samples
 
+Start with `archivebench setup --config comparison.json`, then `archivebench plan comparison.json`. Setup defaults to a bounded initial comparison. Choose `--comparison comprehensive` explicitly for the existing wider search; old saved configs retain that behavior. Review selected encoders and controls, intervals, format variants, quality levels, measured repeat count, and work/time bounds before starting. Initial comparisons may leave a quality level unanswered; inspect the evidence and name the remaining comparison before expanding in a new config/output folder.
+
+During a run, `archivebench status OUTPUT_FOLDER` reads a small `progress.json` alongside canonical `results.json`. It distinguishes initialization/source hashing, reference preparation, compatibility screens, pilots, measured encoding, scoring, validation and review generation. Counts identify completed scored trials, full measured encodes, completed/failed screens, and known remaining screens. Adaptive encoding work has an upper bound, not an exact remaining count. Once a validation shortlist is frozen its required trial count is shown; cached successful trials are not re-encoded. Older runs show the available result counts with unavailable telemetry labeled unknown. Status is the last saved observation; it does not certify that a process is still alive after a forced kill.
+
+Actual one-second pilot timing supplies a per-setting sample estimate. Startup overhead, scene complexity and other stages make it approximate; it is not a promised project finish time. Budget exhaustion, incomplete validation and an initial comparison reaching its attempt cap remain explicit. “Completed” means processing finished, not that every requested target qualified. Compare codecs at a common accepted quality, and compare quality changes within an encoder. Conversions stay named separately; storage savings are not additively attributed to codec, speed and quality.
+
 Select short sections with motion, fine detail and dark or noisy footage. Similar clips add less information than varied scenes. Setup lists eligible clips and asks which to include; it does not infer scene diversity. Proxy and generated archive folders are excluded.
 
 Use the saved configuration and canonical `results.json` as the experiment record. JSON, CSV and Markdown results accompany the HTML report. Report controls reinterpret saved measurements; they do not encode new candidates.

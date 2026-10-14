@@ -8,16 +8,17 @@ from pathlib import Path
 
 from .archive import archive, candidates, cleanup
 from .core import benchmark, primary, probe, run, save, validate_config
-from .encoders import SPECS, discover
+from .encoders import discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings
+from .experiments import experiment_plan
 from .jobs import create_job, run_job
 from .review import inspect_review, launch_review, record_review, saved_reviews
 
 
-def wizard(config_path: Path) -> None:
+def wizard(config_path: Path, comparison: str = "initial") -> None:
     root = Path(input("Source clip or folder: ").strip().strip('"')).resolve()
     files = candidates(root) if root.is_dir() else [root]
     if not files:
@@ -26,8 +27,25 @@ def wizard(config_path: Path) -> None:
         print(f"{i + 1}: {path.name}")
     selection = input("Choose clip numbers (comma-separated, e.g. 1,3,5): ")
     picked = [files[int(number.strip()) - 1] for number in selection.split(",")]
+    if comparison == "initial" and len(picked) > 2:
+        raise ValueError(
+            "Initial comparison accepts at most two clips; use setup --comparison comprehensive for wider coverage"
+        )
     profile = input("Profile compact/editing [compact]: ").strip() or "compact"
     mode = input("Mode quick/thorough [quick]: ").strip() or "quick"
+    encoders = [
+        value.strip()
+        for value in (
+            input(
+                "Encoders, comma-separated [libx265,libsvtav1,hevc_nvenc; all for comprehensive]: "
+            ).strip()
+            or "libx265,libsvtav1,hevc_nvenc"
+        ).split(",")
+    ]
+    if encoders == ["all"]:
+        if comparison != "comprehensive":
+            raise ValueError("All encoders requires setup --comparison comprehensive")
+        encoders = []
     encode_repeats = int(
         input(
             "Measured encodes per setting [1; use 2, 3 or more only to repeat timing measurements]: "
@@ -95,6 +113,7 @@ def wizard(config_path: Path) -> None:
         "version": 1,
         "profile": profile,
         "mode": mode,
+        "comparison": comparison,
         "encode_repeats": encode_repeats,
         "pixel_format": pixel,
         "resolution": resolution,
@@ -110,7 +129,7 @@ def wizard(config_path: Path) -> None:
         "tolerance": 0.5,
         "budget_minutes": budget,
         "samples": samples,
-        "encoders": [],
+        "encoders": encoders,
     }
     if config_path.exists():
         raise ValueError("Config already exists; choose a new path")
@@ -141,7 +160,6 @@ def wizard(config_path: Path) -> None:
                 )
             except ValueError as error:
                 print(f"{variant['label']} / {path.name}: unsupported: {error}")
-    passes, finalists = (2, 4) if mode == "quick" else (4, 8)
     print(
         f"Measured encodes per setting: {encode_repeats} for tuning and validation. Repeats improve timing confidence, not picture quality. Screening and pilots are separate."
     )
@@ -149,7 +167,7 @@ def wizard(config_path: Path) -> None:
         f"Compression tuning searches VMAF {targets} using shared measurements. More targets add distinct settings, not timing repeats. VMAF is a model score, not a percentage of original quality."
     )
     print(
-        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) ** 2 * finalists * passes * len(targets)} tuning trials including shared settings on every sample. Identical settings are reused. Only installed compatible encoders run, and adaptive tuning may stop earlier."
+        f"Experiment upper bound and saved choices: {json.dumps(experiment_plan(config))}. Review footage, controls and bounds before execution."
     )
     save(config_path, config)
     print(
@@ -166,6 +184,7 @@ def main() -> None:
         "setup", help="Guided clip selection and saved experiment configuration"
     )
     setup.add_argument("--config", type=Path, default=Path("local-config.json"))
+    setup.add_argument("--comparison", choices=("initial", "comprehensive"), default="initial")
     commands.add_parser("doctor", help="List installed encoders and quality scoring support")
     scan = commands.add_parser(
         "scan", help="List eligible clips; proxies/generated archives excluded"
@@ -174,6 +193,12 @@ def main() -> None:
     bench = commands.add_parser("benchmark", help="Run or resume a saved experiment")
     bench.add_argument("config", type=Path)
     bench.add_argument("--output", type=Path, required=True)
+    plan = commands.add_parser(
+        "plan", help="Show saved experiment choices and bounds without encoding"
+    )
+    plan.add_argument("config", type=Path)
+    status = commands.add_parser("status", help="Show progress and completed measurements")
+    status.add_argument("output", type=Path)
     report = commands.add_parser(
         "report", help="Regenerate HTML/CSV/Markdown from existing results"
     )
@@ -225,7 +250,29 @@ def main() -> None:
     review.add_argument("--note", default="")
     args = parser.parse_args()
     try:
-        if args.command == "job":
+        if args.command == "plan":
+            config = json.loads(args.config.read_text(encoding="utf-8"))
+            validate_config(config)
+            print(json.dumps(experiment_plan(config), indent=2))
+        elif args.command == "status":
+            progress = args.output / "progress.json"
+            if progress.exists():
+                print(progress.read_text(encoding="utf-8"))
+            else:
+                result = json.loads((args.output / "results.json").read_text(encoding="utf-8"))
+                print(
+                    json.dumps(
+                        {
+                            "status": result.get("status", "unknown"),
+                            "stage": result.get("stage", "unknown"),
+                            "completed_trials": len(result.get("trials", [])),
+                            "completed_screens": len(result.get("screening", [])),
+                            "remaining_work": "unknown; older run has no stage telemetry",
+                        },
+                        indent=2,
+                    )
+                )
+        elif args.command == "job":
             if args.operation == "create":
                 if args.config.exists() or not all((args.source, args.output, args.preset)):
                     raise ValueError(
@@ -286,7 +333,7 @@ def main() -> None:
                 save(args.output, value)
                 print(args.output)
         elif args.command == "setup":
-            wizard(args.config)
+            wizard(args.config, args.comparison)
         elif args.command == "doctor":
             supported, other = discover(run(["ffmpeg", "-encoders"]))
             print(
@@ -305,6 +352,17 @@ def main() -> None:
             print(json.dumps([str(path) for path in candidates(args.source.resolve())], indent=2))
         elif args.command == "benchmark":
             result = benchmark(args.config, args.output)
+            print(
+                json.dumps(
+                    {
+                        "status": result.get("status"),
+                        "comparison_limit_reached": result.get("comparison_limit_reached", False),
+                        "completed_trials": len(result.get("trials", [])),
+                        "validation_status": result.get("validation_status", "unavailable"),
+                        "note": "Completed processing is separate from quality qualification. Review missing/failed evidence before selecting a preset.",
+                    }
+                )
+            )
             print(write_report(result, args.output))
         elif args.command == "report":
             print(
