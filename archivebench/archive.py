@@ -236,6 +236,9 @@ def archive(
     execute: bool,
     ffmpeg: str = "ffmpeg",
     ffprobe: str = "ffprobe",
+    *,
+    job: dict[str, Any] | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> None:
     source_root, output_root = safe(source_root), safe(output_root)
     if (
@@ -246,9 +249,14 @@ def archive(
         raise ValueError("Choose distinct source/output folders; output cannot contain source")
     from .presets import resolve_settings
 
-    settings = resolve_settings(json.loads(settings_path.read_text(encoding="utf-8")))
+    settings = resolve_settings(
+        job["preset"] if job else json.loads(settings_path.read_text(encoding="utf-8"))
+    )
     validate_settings(settings)
     files = [path for path in candidates(source_root) if not path.is_relative_to(output_root)]
+    planned = {row["source"]: row for row in (plan or {}).get("files", [])}
+    if job is not None and set(planned) != {str(path) for path in files}:
+        raise ValueError("Job preflight does not match current source selection")
     print(
         f"Review list: {len(files)} files. Encoder: {settings['encoder']}; originals remain intact."
     )
@@ -279,12 +287,14 @@ def archive(
             "output_root": str(output_root),
             "settings": settings,
             "records": [],
+            **({"job": job} if job is not None else {}),
         }
     )
     if (
         manifest["source_root"] != str(source_root)
         or manifest["output_root"] != str(output_root)
         or fingerprint(manifest["settings"]) != fingerprint(settings)
+        or fingerprint(manifest.get("job")) != fingerprint(job)
     ):
         raise ValueError(
             "Existing archive belongs to another source/settings; choose another output"
@@ -294,11 +304,41 @@ def archive(
         stream.write(str(os.getpid()))
     try:
         for path in files:
+            settings = planned[str(path)]["settings"] if job is not None else manifest["settings"]
+            policy = retention(settings) if settings is not None else {}
             output = safe(
                 output_root / (str(path.relative_to(source_root)) + ".archive.mkv"), output_root
             )
             record = next((r for r in manifest["records"] if r["source"] == str(path)), None)
             original_hash = digest(path)
+            if (
+                job is not None
+                and record
+                and record["status"] != "keep_original"
+                and (
+                    record["output"] != str(output)
+                    or fingerprint(record.get("settings")) != fingerprint(settings)
+                )
+            ):
+                raise ValueError("Saved record mapping/settings do not match job snapshot")
+            if job is not None and planned[str(path)]["action"] == "keep-original":
+                if record and record["source_hash"] != original_hash:
+                    raise ValueError("Original changed since saved job")
+                if not record:
+                    manifest["records"].append(
+                        {
+                            "source": str(path),
+                            "output": "",
+                            "source_hash": original_hash,
+                            "status": "keep_original",
+                            "output_hash": "",
+                            "saving": 0.0,
+                            "settings": settings,
+                            "gaps": planned[str(path)]["gaps"],
+                        }
+                    )
+                    save(manifest_path, manifest)
+                continue
             if record:
                 if original_hash != record["source_hash"]:
                     raise ValueError("Original changed since saved job")
@@ -319,6 +359,7 @@ def archive(
                     "status": "pending",
                     "output_hash": "",
                     "saving": 0.0,
+                    **({"settings": settings} if job is not None else {}),
                 }
                 manifest["records"].append(record)
                 save(manifest_path, manifest)
@@ -421,6 +462,8 @@ def cleanup(
     output_root = safe(output_root)
     path = safe(output_root / "archive-manifest.json", output_root)
     manifest = json.loads(path.read_text(encoding="utf-8"))
+    if "job" in manifest:
+        raise ValueError("Job cleanup requires recorded visual/editor acceptance")
     validate_settings(manifest["settings"])
     if manifest["version"] != 1 or manifest["output_root"] != str(output_root):
         raise ValueError("Invalid cleanup manifest")

@@ -1,6 +1,6 @@
 # Native visual comparison and saved decisions
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -27,4 +27,8 @@ Argument/path tests, review-record invalidation tests, actual viewer smoke test,
 ## Comments
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+
+Implemented on `codex/archive-review`: optional exact-clip viewer, decoded alignment inspection, independent hash/interval-bound visual decisions, terminal inspect/launch/record operations and escaped saved decisions in regenerated reports. Missing viewer retains browser fallback; no third-party binary bundled. Visual attestations never change metric validation.
+
+Focused checks: 13 review/media/preset tests passed with four-CPU process affinity, Ruff format/check and ty passed. Windows installed video-compare 20260708-santiago smoke used synthetic 640×360 24 fps 10-bit 4:2:0 FFV1 and HEVC, 72 aligned frames. Native screenshots showed matching timestamps and moving markers/frame numbers. Default renderer used RGB24; requested 10-bit path reported ARGB2101010 video surface with RGB888 desktop. Ignored `runs/native-smoke/` retains launch evidence/log and screenshots. Camera quality, Log/HDR transforms, physical display precision and audio listening remain unverified; no human acceptance was invented. Integration-wide offline browser/native-still/playback and full regression checks are assigned to the root agent before closing this ticket.
 
