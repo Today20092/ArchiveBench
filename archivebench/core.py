@@ -17,6 +17,7 @@ from typing import Any
 from .encoders import SPECS, discover, options
 from .formats import format_variants, output_video, scale_filter, validate_formats
 from .validation import quality_targets, shortlist, validation_sections
+from .experiments import experiment_plan
 
 
 def digest(path: Path) -> str:
@@ -350,6 +351,7 @@ def validate_config(config: dict[str, Any]) -> None:
     for variant in variants:
         validate_formats({**config, **variant})
     quality_targets(config)
+    experiment_plan(config)
     if (
         not math.isfinite(float(config.get("budget_minutes", 0)))
         or float(config.get("budget_minutes", 0)) <= 0
@@ -409,7 +411,28 @@ def benchmark(config_path: Path, output: Path) -> dict[str, Any]:
             result = json.loads(checkpoint.read_text(encoding="utf-8"))
             result["status"] = "budget_exhausted"
             save(checkpoint, result)
+            progress_path = output / "progress.json"
+            if progress_path.exists():
+                progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                progress["status"] = "budget_exhausted"
+                save(progress_path, progress)
             return result
+    except (
+        ValueError,
+        RuntimeError,
+        OSError,
+        subprocess.TimeoutExpired,
+        KeyboardInterrupt,
+    ) as error:
+        progress_path = output / "progress.json"
+        if progress_path.exists():
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            progress.update(
+                status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed",
+                error=str(error),
+            )
+            save(progress_path, progress)
+        raise
     finally:
         lock.unlink(missing_ok=True)
 
@@ -418,6 +441,63 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     import platform
     import shutil
 
+    plan = experiment_plan(config)
+    result: dict[str, Any] = {}
+    progress: dict[str, Any] = {
+        "status": "running",
+        "stage": "initialization",
+        "stages_seen": [],
+        "bounds": plan["bounds"],
+        "remaining_work": "adaptive; exact count unknown",
+        "pilot_estimate": plan["estimate"],
+        "measured_encodes_completed": 0,
+        "sources_hashed": 0,
+    }
+    unscored_encodes = 0
+
+    def publish(phase: str, **details: Any) -> None:
+        progress.update(details)
+        progress["stage"] = phase
+        if phase not in progress["stages_seen"]:
+            progress["stages_seen"].append(phase)
+        progress["completed_trials"] = len(result.get("trials", []))
+        progress["completed_screens"] = len(result.get("screening", []))
+        successful_screens = {
+            (s["sample"], s.get("variant", "legacy"), s["encoder"])
+            for s in result.get("screening", [])
+        }
+        failed_screens = {
+            (s.get("sample"), s.get("variant", "legacy"), s.get("encoder"))
+            for s in result.get("skipped", [])
+            if s.get("reason", "").startswith("Screen failed:")
+            or s.get("reason") == "Not present in FFmpeg build"
+        }
+        progress["failed_screens"] = len(failed_screens - successful_screens)
+        progress["screen_checks_remaining"] = max(
+            0,
+            progress["bounds"]["screens"]
+            - progress["completed_screens"]
+            - progress["failed_screens"],
+        )
+        progress["completed_tuning_trials"] = sum(
+            t.get("stage", "tuning") == "tuning" for t in result.get("trials", [])
+        )
+        progress["completed_validation_trials"] = sum(
+            t.get("stage") == "validation" for t in result.get("trials", [])
+        )
+        progress["validation_trials_remaining"] = (
+            max(0, progress["frozen_validation_trials"] - progress["completed_validation_trials"])
+            if "frozen_validation_trials" in progress
+            else None
+        )
+        progress["reported_skips"] = len(result.get("skipped", []))
+        progress["measured_encodes_completed"] = (
+            sum(len(t.get("timings", [])) for t in result.get("trials", [])) + unscored_encodes
+        )
+        progress["tuning_attempts_started"] = result.get("initial_attempts")
+        save(output / "progress.json", progress)
+
+    publish("initialization")
     ffmpeg, ffprobe = config.get("ffmpeg", "ffmpeg"), config.get("ffprobe", "ffprobe")
     versions = {}
     for name, executable in [("ffmpeg", ffmpeg), ("ffprobe", ffprobe)]:
@@ -431,9 +511,19 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     chosen = config.get("encoders") or available
     if not chosen:
         raise ValueError("No configured archival encoders installed")
-    source_hashes = {
-        str(Path(s["path"]).resolve()): digest(Path(s["path"])) for s in config["samples"]
-    }
+    plan = experiment_plan({**config, "encoders": chosen})
+    progress["bounds"] = plan["bounds"]
+    source_hashes = {}
+    for sample in config["samples"]:
+        source = Path(sample["path"]).resolve()
+        if str(source) not in source_hashes:
+            publish(
+                "hashing",
+                current_source=source.name,
+                sources_total=len({str(Path(s["path"]).resolve()) for s in config["samples"]}),
+            )
+            source_hashes[str(source)] = digest(source)
+            publish("hashing", sources_hashed=len(source_hashes))
     environment: dict[str, Any] = {
         "platform": platform.platform(),
         "cpu": platform.processor(),
@@ -463,11 +553,12 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "adapters_sha256": digest(Path(__file__).with_name("encoders.py")),
             "formats_sha256": digest(Path(__file__).with_name("formats.py")),
             "validation_sha256": digest(Path(__file__).with_name("validation.py")),
+            "experiments_sha256": digest(Path(__file__).with_name("experiments.py")),
             "environment": environment,
         }
     )
     result_path = output / "results.json"
-    result: dict[str, Any] = (
+    result = (
         json.loads(result_path.read_text(encoding="utf-8"))
         if result_path.exists()
         else {
@@ -513,12 +604,36 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     result["stage"] = "validation" if "validation_shortlist" in result else "tuning"
     save(result_path, result)
     contexts: list[dict[str, Any]] = []
+    searching = True
 
     def measure_candidate(encoder: str, quality: int) -> dict[str, Any]:
+        nonlocal unscored_encodes
         key = f"{variant_id}-{stage}-{sample_id}-{encoder}-q{quality}"
         previous = next((t for t in result["trials"] if t["id"] == key), None)
         if previous:
             return previous
+        if stage == "tuning" and plan["comparison"] == "initial":
+            search_id = f"{variant_id}-{sample_id}-{encoder}"
+            attempts = result.setdefault("initial_search_attempts", {})
+            quota = max(
+                1,
+                plan["bounds"]["tuning_attempts"]
+                // (len(config["samples"]) ** 2 * max(1, len(finalists))),
+            )
+            if searching and attempts.get(search_id, 0) >= quota:
+                result["comparison_limit_reached"] = True
+                raise ValueError(
+                    "Initial per-encoder search bound reached; reserved work covers other encoders and scenes"
+                )
+            if result.get("initial_attempts", 0) >= plan["bounds"]["tuning_attempts"]:
+                result["comparison_limit_reached"] = True
+                raise ValueError(
+                    "Initial comparison attempt bound reached; review evidence before explicitly expanding in a new configuration/output folder"
+                )
+            result["initial_attempts"] = result.get("initial_attempts", 0) + 1
+            if searching:
+                attempts[search_id] = attempts.get(search_id, 0) + 1
+            save(result_path, result)
         print(
             f"[{sample_id}] {encoder} quality {quality}, shared {stage} measurement",
             flush=True,
@@ -542,9 +657,18 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             target,
         )
         pilot_started = time.monotonic()
+        publish("pilot", current_candidate=key, measurement_stage=stage)
         run(args, min(30, remaining()))
         pilot_seconds = time.monotonic() - pilot_started
         validate_output(temp, target, encoder, pixel, ffprobe)
+        publish(
+            "pilot",
+            pilot_estimate={
+                "candidate": key,
+                "seconds": pilot_seconds * video["frames"] / probe_frames,
+                "note": "Actual one-second pilot extrapolation; approximate, includes startup, excludes scoring, references and other settings. No guaranteed total ETA.",
+            },
+        )
         print(
             f"  Pilot estimate: {pilot_seconds * video['frames'] / probe_frames:.0f}s for this sample (includes startup; approximate)",
             flush=True,
@@ -554,6 +678,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             if time.monotonic() - started >= deadline:
                 raise subprocess.TimeoutExpired(encoder, budget)
             tick = time.monotonic()
+            publish("encode", repeat=repeat + 1)
             run(
                 encode_args(
                     ffmpeg,
@@ -570,7 +695,10 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 remaining(),
             )
             timings.append(time.monotonic() - tick)
+            unscored_encodes += 1
+            publish("encode")
         validate_output(temp, target, encoder, pixel, ffprobe)
+        publish("scoring")
         measured = score(
             ffmpeg,
             temp,
@@ -604,7 +732,9 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             **measured,
         }
         result["trials"].append(metrics)
+        unscored_encodes -= len(timings)
         save(result_path, result)
+        publish(stage)
         return metrics
 
     experiment_config = config
@@ -619,7 +749,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         flush=True,
     )
     print(
-        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) ** 2 * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes * len(targets)} tuning trials including shared settings on every sample; cached settings are reused and adaptive tuning may stop earlier.",
+        f"Experiment plan: {json.dumps(plan)}. Cached settings are reused; exact adaptive remaining count is unknown.",
         flush=True,
     )
     for variant, index, sample in (
@@ -639,6 +769,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             else output / sample_id
         )
         directory.mkdir(parents=True, exist_ok=True)
+        publish("reference", current_sample=sample_id, measurement_stage="tuning")
         try:
             video = inspect_source(path, float(sample["start"]), float(sample["seconds"]), ffprobe)
             target = output_video(video, config)
@@ -783,6 +914,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 screen_dir.mkdir(exist_ok=True)
                 screen_output = screen_dir / "screen.mkv"
                 quality = int(config.get("quality_overrides", {}).get(encoder, SPECS[encoder][1]))
+                publish("screen", current_encoder=encoder)
                 print(f"[{sample_id}] Compatibility/quality screen: {encoder}", flush=True)
                 tick = time.monotonic()
                 run(
@@ -802,6 +934,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 )
                 elapsed = time.monotonic() - tick
                 validate_output(screen_output, target, encoder, pixel, ffprobe)
+                publish("scoring", measurement_stage="screen")
                 measured = score(
                     ffmpeg,
                     screen_output,
@@ -837,6 +970,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     }
                 )
             save(result_path, result)
+            publish("screen", measurement_stage="tuning")
         screens = [
             row
             for row in result["screening"]
@@ -929,6 +1063,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     candidates = sorted(
         {(t.get("variant", "legacy"), t["encoder"], t["quality"]) for t in result["trials"]}
     )
+    searching = False
     for context in contexts:
         config, variant, sample = context["config"], context["variant"], context["sample"]
         video, target, reference = context["video"], context["target"], context["reference"]
@@ -965,6 +1100,11 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         result["validation_reserve"] = config.get("validation_reserve", 0.3)
         result["budget_scope"] = "per invocation, shared across all stages and variants"
         result["stage"] = "validation"
+        publish(
+            "validation",
+            frozen_validation_trials=len(result.get("validation_shortlist", []))
+            * len(config["validation_samples"]),
+        )
         save(result_path, result)
         stage, deadline = "validation", budget
         for candidate in result.get("validation_shortlist", []):
@@ -988,6 +1128,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 ):
                     continue
                 try:
+                    publish("reference", current_sample=sample_id, measurement_stage="validation")
                     video = inspect_source(
                         path, float(sample["start"]), float(sample["seconds"]), ffprobe
                     )
@@ -1122,10 +1263,17 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     from .stills import generate_stills
     from .media import generate_review_media
 
+    publish("review_generation")
     generate_stills(result, output, remaining)
     generate_review_media(result, output, remaining)
     result["status"] = "budget_exhausted" if time.monotonic() - started >= deadline else "completed"
     result["session_seconds"] = time.monotonic() - started
     result["remaining_seconds"] = max(0, budget - result["session_seconds"])
     save(result_path, result)
+    publish(
+        "finished",
+        status=result["status"],
+        comparison_limit_reached=result.get("comparison_limit_reached", False),
+        validation_status=result.get("validation_status", "unavailable"),
+    )
     return result

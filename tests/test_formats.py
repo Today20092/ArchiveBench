@@ -92,6 +92,7 @@ def test_wizard_saves_retention_and_video_choices(tmp_path, monkeypatch, capsys)
             "1",
             "",
             "",
+            "libx265,hevc_nvenc",
             "2",
             "80,90,95,97",
             "yuv420p10le",
@@ -142,12 +143,14 @@ def test_wizard_defaults_to_only_match_source(tmp_path, monkeypatch, capsys):
             ],
         },
     )
-    answers = iter([str(source), "1", "", "", "", "", "", "", "", "", "", "", "", "0"])
+    answers = iter([str(source), "1", "", "", "", "", "", "", "", "", "", "", "", "", "0"])
     monkeypatch.setattr("builtins.input", lambda _: next(answers))
     settings = tmp_path / "settings.json"
     cli.wizard(settings)
     config = json.loads(settings.read_text())
     assert config["encode_repeats"] == 1
+    assert config["comparison"] == "initial"
+    assert config["encoders"] == ["libx265", "libsvtav1", "hevc_nvenc"]
     assert config["variants"] == [
         {
             "id": "match-source",

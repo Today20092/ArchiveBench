@@ -1,6 +1,6 @@
 # Bounded comparisons and useful progress
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -27,5 +27,9 @@ Tests for bounded work, cache reuse, progress stages, missing/failed evidence an
 
 ## Comments
 
-Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+Specified from the user-approved interview on 2026-10-14. Implementing in the isolated archive-experiments worktree, based on the integration branch. CLI plan/status and synthetic benchmark/results are the approved public test boundaries. The current camera benchmark checkout remains untouched. Completion awaits combined integration checks.
+
+Implemented initial/comprehensive selection, explicit adapter controls and bounds, saved initial attempt/search quotas, plan/status commands, stage counters and measured pilot estimates. Existing missing-comparison configs retain comprehensive behavior and runner/cache identity includes the planning code. Missing/failed target coverage remains unqualified; processing completion does not imply all targets passed.
+
+TDD: new CLI plan test failed before adding commands; real synthetic limited-run test failed before adding the attempt limit. Both passed after implementation. Four focused experiment/wizard tests passed, including real FFmpeg shared-cache resume and budget exhaustion; 22 legacy validation tests passed. Python 3.11.14, four logical CPU affinity for test runs. Ruff format/check, ty, 15 report math tests and diff whitespace check passed. Report sources are unchanged, so bundled-JS/browser/still rebuild checks are reserved for combined integration. No real footage benchmarks or deadline guarantee tested. The native viewer, job acceptance and hardware-specific validation belong to their separate tickets.
 
