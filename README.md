@@ -9,7 +9,15 @@ Choose archive presets for completed projects using your own footage and hardwar
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-F4C98B?style=for-the-badge&amp;labelColor=75512B"></a>
 </p>
 
-[Install](docs/installation.md) · [Quick start](#start) · [Benchmark guide](docs/benchmark.md) · [Settings](docs/configuration.md) · [Archiving](docs/archiving.md) · [Agent prompt](docs/AGENT-PROMPT.md)
+[Install](docs/installation.md) · [Quick start](#start) · [Read the report](#read-the-report) · [Benchmark guide](docs/benchmark.md) · [Settings](docs/configuration.md) · [Archiving](docs/archiving.md) · [Release notes](docs/releases.md) · [Agent prompt](docs/AGENT-PROMPT.md)
+
+## How it works
+
+Choose footage sections and save an experiment. ArchiveBench measures encoder settings, checks finalists on fresh footage, and writes an offline report. Use the report to choose settings, review the exact encoded clips, then export settings for the optional archive runner.
+
+![ArchiveBench user flow: check tools, save an experiment, benchmark, compare and review, export settings, then archive while keeping originals.](docs/diagrams/user-flow.svg)
+
+[Open the user-flow diagram](docs/diagrams/user-flow.html). Cleanup is a separate decision after visual review and verification.
 
 ## Start
 
@@ -29,9 +37,11 @@ uv run archivebench plan local-config.json
 uv run archivebench benchmark local-config.json --output runs/first-test
 ```
 
-Open `runs/first-test/report.html`. No server, internet connection or Node installation is needed to view it. Compare measured settings, inspect previews and estimate size/time for longer footage. Review the saved clips before accepting a result.
+Setup asks for footage sections, format variants, quality levels, encode repeats and a time budget. Review its proposed validation samples before you run the benchmark. See [configuration](docs/configuration.md) for the saved fields.
 
-Want to see the report first? Download the [synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. Its measurements demonstrate the interface; benchmark your own footage and hardware to choose settings.
+Open `runs/first-test/report.html`. No server, internet connection or Node installation is needed to view it. Follow [the report steps below](#read-the-report) to compare measurements and review the clips.
+
+Want to see a report first? Download the [v0.1.0 synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. It shows the released interface, which may differ from this checkout. Its synthetic measurements cannot select settings for your footage and hardware.
 
 Prefer an installed command? See the [standalone installation](docs/installation.md#install-the-command). Python distributions are available from [GitHub Releases](https://github.com/Today20092/ArchiveBench/releases).
 
@@ -43,9 +53,27 @@ ArchiveBench screens configured H.264, H.265, AV1 and VP9 encoders, including ha
 
 Compare named format variants in one run, including **Match source** for mixed footage. A project candidate uses the same encoder and quality across scenes. It qualifies only when every required sample passes, then the smallest and fastest finalists are checked on fresh sections that were excluded from tuning. Failed and incomplete evidence stays visible.
 
-Use the graphs to choose what matters to you: smaller files, faster encoding, or a higher measured quality target. Full-project storage/time estimates use the selected sources' durations. Report controls filter recorded measurements; new tests require a new experiment.
+Compare quality levels in the same experiment. Setup offers VMAF 80, 90, 95 and 97, or a custom list. The runner reuses identical measurements across levels. Each level still needs its own complete passing evidence. A higher target can require more storage or encoding time, and some targets may remain unmet within your budget.
+
+Choose how many encode repeats to measure per setting. The default is one. More repeats measure timing variability; they do not improve picture quality. Tuning tries different compression settings, so one repeat can still involve many encodes.
+
+![Recommendation flow: measure tuning samples, require all samples to pass, freeze finalists, check fresh validation samples, then distinguish validated from provisional, failed or incomplete evidence.](docs/diagrams/recommendation-flow.svg)
+
+[Open the recommendation diagram](docs/diagrams/recommendation-flow.html). A budget-limited search does not prove that the best possible settings were found.
 
 VMAF is a model score, not a percentage of original quality. Measurements cover video only. Projections exclude audio, and scores do not capture all chroma loss or prove editing quality. Read the [method and limits](docs/benchmark.md) before choosing settings.
+
+## Read the report
+
+1. Start with the whole collection. Use the size/time and quality/size charts to find measured settings that fit your priorities. The shaded areas show the preferred direction; they do not certify a result.
+2. Compare the saved quality levels. The table shows the smallest validated collection choice at each target, its weakest tuning and validation scores, and projected video size and encoding time. Missing or unmet targets stay explicit.
+3. Select a setting from a chart or choice card. Use the two setting selectors to compare size, time and VMAF differences for the same sample coverage. Open the sortable measurements table for details.
+4. Inspect the evidence and footage. Review matched native-size stills at saved low-scoring moments with crop and zoom controls. Use paired playback to inspect motion, then open the exact measured MKV in a native player. Browser review previews use H.264 8-bit 4:2:0 and cannot prove source-format fidelity.
+5. Use the selected-settings handoff to copy an agent prompt or export archive settings and a decision summary. The summary records your active constraints and stated visual-review status. Review marks do not authorize cleanup.
+
+The report starts with the selected sources' combined duration. Changing duration scales that source mix to estimate video size and encoding time. Target and duration controls use saved measurements; they do not run new tests or change the saved experiment conclusion. Older results without full source durations show a labeled sample-duration estimate.
+
+Read [the benchmark guide](docs/benchmark.md) for scoring, validation, playback limits and restart behavior. Keep `review/` beside `report.html` for native stills and companion playback.
 
 ## Configuration and restart
 
