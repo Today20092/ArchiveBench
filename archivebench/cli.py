@@ -11,7 +11,7 @@ from .core import benchmark, primary, probe, run, save, validate_config
 from .encoders import SPECS, discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
-from .validation import validation_sections
+from .validation import quality_targets, validation_sections
 
 
 def wizard(config_path: Path) -> None:
@@ -25,6 +25,23 @@ def wizard(config_path: Path) -> None:
     picked = [files[int(number.strip()) - 1] for number in selection.split(",")]
     profile = input("Profile compact/editing [compact]: ").strip() or "compact"
     mode = input("Mode quick/thorough [quick]: ").strip() or "quick"
+    encode_repeats = int(
+        input(
+            "Measured encodes per setting [1; use 2, 3 or more only to repeat timing measurements]: "
+        ).strip()
+        or "1"
+    )
+    targets = quality_targets(
+        {
+            "target_vmafs": [
+                float(value.strip())
+                for value in (
+                    input("VMAF targets, comma-separated [80,90,95,97; or one target]: ").strip()
+                    or "80,90,95,97"
+                ).split(",")
+            ]
+        }
+    )
     for index, variant in enumerate(VARIANT_PRESETS, 1):
         print(f"{index}: {variant['label']} ({variant['pixel_format']}, {variant['resolution']})")
     choice = (
@@ -75,6 +92,7 @@ def wizard(config_path: Path) -> None:
         "version": 1,
         "profile": profile,
         "mode": mode,
+        "encode_repeats": encode_repeats,
         "pixel_format": pixel,
         "resolution": resolution,
         "variants": variants,
@@ -84,7 +102,8 @@ def wizard(config_path: Path) -> None:
         "subtitles": subtitles,
         "attachments": attachments,
         "metadata": metadata,
-        "target_vmaf": 93 if profile == "compact" else 96,
+        "target_vmaf": max(targets),
+        "target_vmafs": targets,
         "tolerance": 0.5,
         "budget_minutes": budget,
         "samples": samples,
@@ -121,7 +140,13 @@ def wizard(config_path: Path) -> None:
                 print(f"{variant['label']} / {path.name}: unsupported: {error}")
     passes, finalists = (2, 4) if mode == "quick" else (4, 8)
     print(
-        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) ** 2 * finalists * passes} tuning trials including shared settings on every sample. Only installed compatible encoders run, and adaptive tuning may stop earlier."
+        f"Measured encodes per setting: {encode_repeats} for tuning and validation. Repeats improve timing confidence, not picture quality. Screening and pilots are separate."
+    )
+    print(
+        f"Compression tuning searches VMAF {targets} using shared measurements. More targets add distinct settings, not timing repeats. VMAF is a model score, not a percentage of original quality."
+    )
+    print(
+        f"Estimated upper bound before compatibility checks: {len(variants) * len(samples) * len(SPECS)} encoder screens; {len(variants) * len(samples) ** 2 * finalists * passes * len(targets)} tuning trials including shared settings on every sample. Identical settings are reused. Only installed compatible encoders run, and adaptive tuning may stop earlier."
     )
     save(config_path, config)
     print(

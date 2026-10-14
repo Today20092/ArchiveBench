@@ -4,12 +4,18 @@ Terms for comparing archival encodes and deciding which settings to use.
 
 ## Language
 
+**Quality levels**:
+A saved list of VMAF targets for comparing measured storage, quality and encoding time. Targets share identical measurements; each target's recommendation must meet its own threshold on all tuning and fresh validation sections. Scores are not percentages of original quality.
+
 **Format variant**:
 A named combination of output chroma, bit depth and resolution choices within an experiment.
 _Avoid_: Codec, quality profile
 
 **Tuning sample**:
 A selected footage section used to search for encoder settings that meet the quality target.
+
+**Encode repeat**:
+An additional encode of the same section with identical settings to measure timing variability. It does not improve picture quality or try a different compression setting. The configured repeat count includes the first measured encode and defaults to one.
 
 **Match source**:
 A format variant that preserves each clip's resolution, chroma, bit depth and frame rate while re-encoding its video. The output codec and bitrate may differ from the source, and mixed sources retain their individual formats.

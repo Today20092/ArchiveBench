@@ -5,6 +5,22 @@ from pathlib import Path
 from typing import Any
 
 
+def quality_targets(config: dict[str, Any]) -> list[float]:
+    targets = config.get("target_vmafs", [config.get("target_vmaf", 95)])
+    if (
+        not isinstance(targets, list)
+        or not targets
+        or any(type(t) not in (int, float) or not 0 < t <= 100 for t in targets)
+        or len(set(targets)) != len(targets)
+    ):
+        raise ValueError("target_vmafs must be a nonempty list of unique VMAF scores in (0,100]")
+    if "target_vmaf" in config and (
+        type(config["target_vmaf"]) not in (int, float) or config["target_vmaf"] not in targets
+    ):
+        raise ValueError("target_vmaf must be one of target_vmafs")
+    return sorted(targets)
+
+
 def validation_sections(
     samples: list[dict[str, Any]],
     durations: dict[str, float],
@@ -70,11 +86,9 @@ def shortlist(result: dict[str, Any]) -> list[dict[str, Any]]:
             groups.setdefault(key, {})[trial["sample"]] = trial
     required = {f"sample-{i + 1}" for i in range(len(result["config"]["samples"]))}
     sources = {s["id"]: s for s in result["samples"] if s.get("stage", "tuning") == "tuning"}
-    qualified = []
+    qualified: list[dict[str, Any]] = []
     for (variant, encoder, quality), rows in groups.items():
-        if set(rows) != required or any(
-            t["vmaf"] < result["config"]["target_vmaf"] for t in rows.values()
-        ):
+        if set(rows) != required:
             continue
         rates: dict[str, list[tuple[float, float, float]]] = {}
         for sample_id, trial in rows.items():
@@ -91,6 +105,7 @@ def shortlist(result: dict[str, Any]) -> list[dict[str, Any]]:
                 "variant": variant,
                 "encoder": encoder,
                 "quality": quality,
+                "tuning_vmaf": min(t["vmaf"] for t in rows.values()),
                 "projected_bytes": sum(
                     v[0][2] * sum(r[0] for r in v) / len(v) for v in rates.values()
                 ),
@@ -101,9 +116,17 @@ def shortlist(result: dict[str, Any]) -> list[dict[str, Any]]:
         )
     selected = []
     for variant in dict.fromkeys(c["variant"] for c in qualified):
-        candidates = [c for c in qualified if c["variant"] == variant]
-        for metric in ("projected_bytes", "projected_seconds"):
-            candidate = min(candidates, key=lambda c: (c[metric], c["encoder"], c["quality"]))
-            if candidate not in selected:
-                selected.append(candidate)
+        for target in quality_targets(result["config"]):
+            candidates = [
+                c for c in qualified if c["variant"] == variant and c["tuning_vmaf"] >= target
+            ]
+            if not candidates:
+                continue
+            for metric in ("projected_bytes", "projected_seconds"):
+                candidate = min(candidates, key=lambda c: (c[metric], c["encoder"], c["quality"]))
+                if candidate not in selected:
+                    candidate["targets"] = []
+                    selected.append(candidate)
+                if target not in candidate["targets"]:
+                    candidate["targets"].append(target)
     return selected

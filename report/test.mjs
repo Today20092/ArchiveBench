@@ -90,3 +90,17 @@ test('fresh validation requires every holdout at saved target and display change
  assert.equal(configurations(result,1)[0].evidence_status,'failed');
  delete result.validation_shortlist;assert.equal(configurations(result,1)[0].evidence_status,'provisional');
 });
+
+test('quality levels share evidence without claiming a higher target passed',()=>{
+ const trial={id:'t',sample:'sample-1',stage:'tuning',variant:'legacy',encoder:'libx264',quality:30,bytes:100,encode_seconds:1,vmaf:96,ssim:1};
+ const result={identity:'levels',config:{samples:[{}],validation_samples:[{}],target_vmaf:97,target_vmafs:[80,90,95,97]},samples:[{id:'sample-1',seconds:1}],trials:[trial,{...trial,id:'v',stage:'validation',sample:'validation-1',vmaf:92}],skipped:[],validation_required:1,validation_target:97,validation_shortlist:[{variant:'legacy',encoder:'libx264',quality:30,targets:[80,90,95]}]};
+ const rows=configurations(result,1);
+ assert.equal(rows[0].evidence_status,'validated');
+ assert.equal(recommendations(rows,80).length,1);
+ assert.equal(recommendations(rows,90).length,1);
+ assert.equal(recommendations(rows,95).length,0);
+ assert.equal(recommendations(rows,97).length,0);
+ assert.equal(archiveSettings(result,rows[0]).validation_target,80);
+ result.trials.pop();
+ assert.equal(configurations(result,1)[0].evidence_status,'incomplete');
+});

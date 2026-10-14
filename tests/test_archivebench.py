@@ -42,6 +42,14 @@ def test_validation_rejects_bad_config():
         validate_config({"version": 1, "mode": "quick", "profile": "compact", "samples": []})
 
 
+@pytest.mark.parametrize("repeats", [0, -1, True, False, 1.5, "2", None])
+def test_validation_rejects_invalid_encode_repeats(repeats):
+    with pytest.raises(ValueError, match="encode_repeats must be a positive integer"):
+        validate_config(
+            {"version": 1, "mode": "thorough", "profile": "compact", "encode_repeats": repeats}
+        )
+
+
 def test_unsupported_source_formats(monkeypatch):
     import archivebench.core as core
 

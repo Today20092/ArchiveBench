@@ -8,6 +8,7 @@ from typing import Any
 
 from .formats import format_variants
 from .media import safe_asset_path
+from .validation import quality_targets
 
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +84,8 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "",
         f"Status: {result['status']}",
         f"Fresh-footage validation: {result.get('validation_status', 'provisional, no reviewed holdouts')}",
+        f"Quality targets: {quality_targets(result['config'])}",
+        f"Measured encodes per setting: {result['config'].get('encode_repeats', 1)}",
         "Format variants: "
         + "; ".join(
             f"{variant['label']} ({variant['pixel_format']}, {variant['resolution']})"
@@ -108,5 +111,12 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
             f"Skipped/failed configurations: {len(result['skipped'])}.",
         ]
     )
+    if result.get("validation_shortlist"):
+        summary.extend(["", "## Fresh checks by target", ""])
+        for candidate in result["validation_shortlist"]:
+            summary.append(
+                f"- {candidate['variant']} / {candidate['encoder']} q{candidate['quality']}: "
+                f"{candidate.get('target_statuses', candidate.get('evidence_status', 'incomplete'))}"
+            )
     (directory / "summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
     return report

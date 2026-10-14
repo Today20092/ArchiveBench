@@ -16,7 +16,7 @@ from typing import Any
 
 from .encoders import SPECS, discover, options
 from .formats import format_variants, output_video, scale_filter, validate_formats
-from .validation import shortlist, validation_sections
+from .validation import quality_targets, shortlist, validation_sections
 
 
 def digest(path: Path) -> str:
@@ -341,13 +341,15 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Config requires version 1 and mode quick/thorough")
     if config.get("profile") not in ("compact", "editing"):
         raise ValueError("Choose compact or editing profile")
+    repeats = config.get("encode_repeats", 1)
+    if type(repeats) is not int or repeats < 1:
+        raise ValueError("encode_repeats must be a positive integer")
     if not config.get("samples"):
         raise ValueError("Select at least one sample")
     variants = format_variants(config)
     for variant in variants:
         validate_formats({**config, **variant})
-    if not 0 < float(config.get("target_vmaf", 95)) <= 100:
-        raise ValueError("VMAF target must be in (0,100]")
+    quality_targets(config)
     if (
         not math.isfinite(float(config.get("budget_minutes", 0)))
         or float(config.get("budget_minutes", 0)) <= 0
@@ -505,7 +507,8 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         return max(0.1, deadline - (time.monotonic() - started))
 
     passes = 2 if config["mode"] == "quick" else 4
-    repeats = 1 if config["mode"] == "quick" else 3
+    targets = quality_targets(config)
+    repeats = config.get("encode_repeats", 1)
     result["status"] = "running"
     result["stage"] = "validation" if "validation_shortlist" in result else "tuning"
     save(result_path, result)
@@ -608,7 +611,15 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
     variants = format_variants(config)
     print(f"Format combinations: {', '.join(v['label'] for v in variants)}", flush=True)
     print(
-        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) ** 2 * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes} tuning trials including shared settings on every sample; adaptive tuning may stop earlier.",
+        f"Measured encodes per setting: {repeats} (tuning and validation; timing uses the median). Screening, pilots and different quality attempts are separate.",
+        flush=True,
+    )
+    print(
+        f"Compression tuning targets: VMAF {', '.join(str(t) for t in targets)}; shared measurements, not percentages of original quality.",
+        flush=True,
+    )
+    print(
+        f"Estimated upper bound: {len(variants) * len(config['samples']) * len(chosen)} compatibility screens and {len(variants) * len(config['samples']) ** 2 * min(len(chosen), 4 if config['mode'] == 'quick' else 8) * passes * len(targets)} tuning trials including shared settings on every sample; cached settings are reused and adaptive tuning may stop earlier.",
         flush=True,
     )
     for variant, index, sample in (
@@ -834,13 +845,13 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         # A short screen is only a heuristic: favor near-target quality, then storage/time.
         screens.sort(
             key=lambda row: (
-                max(0, float(config["target_vmaf"]) - row["vmaf"]),
+                max(0, max(targets) - row["vmaf"]),
                 row["bytes"],
                 row["encode_seconds"],
             )
         )
         finalists = [row["encoder"] for row in screens[: 4 if config["mode"] == "quick" else 8]]
-        for encoder in finalists:
+        for encoder, quality_target in ((e, t) for e in finalists for t in targets):
             if time.monotonic() - started >= deadline:
                 break
             if encoder not in available:
@@ -854,8 +865,27 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 )
                 continue
             _, initial, low, high, _ = SPECS[encoder]
-            quality = int(config.get("quality_overrides", {}).get(encoder, initial))
-            tested: list[tuple[int, float]] = []
+            tested = [
+                (t["quality"], t["vmaf"])
+                for t in result["trials"]
+                if t.get("stage", "tuning") == "tuning"
+                and t.get("variant", "legacy") == variant_id
+                and t["sample"] == sample_id
+                and t["encoder"] == encoder
+            ]
+            quality = (
+                min(tested, key=lambda item: abs(item[1] - quality_target))[0]
+                if tested
+                else int(config.get("quality_overrides", {}).get(encoder, initial))
+            )
+            # Freeze the search seed so resuming cannot grant another round of attempts.
+            search_key = f"{variant_id}-{sample_id}-{encoder}-{quality_target}"
+            search = result.setdefault("tuning_searches", {}).setdefault(
+                search_key, {"quality": quality, "known": tested}
+            )
+            quality, tested = search["quality"], list(search["known"])
+            save(result_path, result)
+            print(f"[{sample_id}] {encoder}: searching VMAF {quality_target}", flush=True)
             metrics: dict[str, Any]
             try:
                 for attempt in range(passes):
@@ -865,15 +895,22 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         metrics = previous
                     else:
                         metrics = measure_candidate(encoder, quality)
-                    tested.append((quality, metrics["vmaf"]))
-                    difference = float(config["target_vmaf"]) - metrics["vmaf"]
-                    if abs(difference) <= float(config.get("tolerance", 0.5)):
+                    if not any(q == quality for q, _ in tested):
+                        tested.append((quality, metrics["vmaf"]))
+                    difference = quality_target - metrics["vmaf"]
+                    if -float(config.get("tolerance", 0.5)) <= difference <= 0:
                         break
                     direction = 1 if encoder.endswith("_videotoolbox") else -1
                     step = max(1, min(8, round(abs(difference) * 2)))
                     quality = max(
                         low, min(high, quality + direction * (step if difference > 0 else -step))
                     )
+                    below = [(q, v) for q, v in tested if v < quality_target]
+                    above = [(q, v) for q, v in tested if v >= quality_target]
+                    if below and above:
+                        a = min(below, key=lambda item: abs(item[1] - quality_target))[0]
+                        b = min(above, key=lambda item: abs(item[1] - quality_target))[0]
+                        quality = (a + b) // 2
                     if any(q == quality for q, _ in tested):
                         break
             except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
@@ -922,7 +959,8 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             selected = shortlist(result)
             if selected:
                 result["validation_shortlist"] = selected
-        result["validation_target"] = config["target_vmaf"]
+            result["validation_target"] = config.get("target_vmaf", max(targets))
+            result["validation_targets"] = targets
         result["validation_required"] = len(source_hashes)
         result["validation_reserve"] = config.get("validation_reserve", 0.3)
         result["budget_scope"] = "per invocation, shared across all stages and variants"
@@ -1043,7 +1081,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 and t["encoder"] == candidate["encoder"]
                 and t["quality"] == candidate["quality"]
             ]
-            failed = any(t["vmaf"] < config["target_vmaf"] for t in evidence) or any(
+            terminal = any(
                 s.get("stage") == "validation"
                 and s.get("variant") == candidate["variant"]
                 and s.get("encoder") == candidate["encoder"]
@@ -1054,9 +1092,19 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             complete = {t["sample"] for t in evidence} == {
                 f"validation-{i + 1}" for i in range(result["validation_required"])
             }
-            candidate["evidence_status"] = (
-                "failed" if failed else "validated" if complete else "incomplete"
-            )
+            candidate["target_statuses"] = {
+                str(quality_target): (
+                    "failed"
+                    if terminal or any(t["vmaf"] < quality_target for t in evidence)
+                    else "validated"
+                    if complete
+                    else "incomplete"
+                )
+                for quality_target in candidate.get("targets", [result["validation_target"]])
+            }
+            candidate["evidence_status"] = candidate["target_statuses"][
+                str(min(candidate.get("targets", [result["validation_target"]])))
+            ]
             candidate["validation_coverage"] = len(evidence)
         result["validation_status"] = (
             "validated"

@@ -16,6 +16,11 @@ export function recommendations(rows, target, lowTarget = null, maxMinutes = nul
   return sampleId ? [] : eligible(rows, target, lowTarget, maxMinutes).filter(row => row.evidence_status === 'validated');
 }
 export const configurationKey = row => JSON.stringify([row.variant ?? 'legacy', row.encoder, row.quality, row.resolution ?? 'original']);
+export const qualityTargets = result => result.config.target_vmafs ?? [result.config.target_vmaf ?? 95];
+export function validationTarget(result, row) {
+  const candidate = result.validation_shortlist?.find(candidate => candidate.variant === (row.variant ?? 'legacy') && candidate.encoder === row.encoder && candidate.quality === row.quality);
+  return candidate?.targets?.length ? Math.min(...candidate.targets) : result.validation_target;
+}
 
 export function evidenceStatus(result, row) {
   const selected = result.validation_shortlist?.some(candidate => candidate.variant === (row.variant ?? 'legacy') && candidate.encoder === row.encoder && candidate.quality === row.quality);
@@ -24,8 +29,9 @@ export function evidenceStatus(result, row) {
   const tuning = result.trials.filter(trial => (trial.stage ?? 'tuning') === 'tuning' && (trial.variant ?? 'legacy') === (row.variant ?? 'legacy') && trial.encoder === row.encoder && trial.quality === row.quality);
   const evidence = result.trials.filter(trial => trial.stage === 'validation' && trial.variant === row.variant && trial.encoder === row.encoder && trial.quality === row.quality);
   if (result.skipped?.some(failure => failure.stage === 'validation' && failure.variant === row.variant && failure.encoder === row.encoder && failure.quality === row.quality && failure.terminal)) return 'failed';
-  if (evidence.some(trial => trial.vmaf < result.validation_target)) return 'failed';
-  if (tuning.some(trial => trial.vmaf < result.validation_target)) return 'failed';
+  const target = validationTarget(result, row);
+  if (evidence.some(trial => trial.vmaf < target)) return 'failed';
+  if (tuning.some(trial => trial.vmaf < target)) return 'failed';
   if (!result.config.samples.every((_, i) => tuning.some(trial => trial.sample === `sample-${i + 1}`)) || required.length !== result.validation_required || required.length === 0 || !required.every((_, i) => evidence.some(trial => trial.sample === `validation-${i + 1}`))) return 'incomplete';
   return 'validated';
 }
@@ -112,6 +118,6 @@ export function archiveSettings(result, trial) {
     subtitles:config.subtitles ?? 'copy',attachments:config.attachments ?? 'copy',metadata:config.metadata ?? 'copy',
     benchmark_identity:result.identity,source_sample:trial.sample,vmaf:trial.vmaf,
     evidence_status:evidenceStatus(result, trial),evidence_scope:validation.length ? 'tuning and validation' : 'tuning',validated:evidenceStatus(result, trial) === 'validated',
-    validation_target:result.validation_target ?? null,validation_coverage:validation.length,validation_expected:result.validation_required ?? 0,
+    validation_target:validationTarget(result, trial) ?? null,validation_coverage:validation.length,validation_expected:result.validation_required ?? 0,
     validation_vmaf:validation.length ? Math.min(...validation.map(row => row.vmaf)) : null};
 }
