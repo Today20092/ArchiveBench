@@ -1,6 +1,6 @@
 # Reuse accepted settings
 
-Read the installed command help for preset operations. Legacy releases use exported archive-settings JSON; preserve it with a human explanation and historical evidence rather than inventing a newer schema. Later commands may provide portable presets and scope checks through the same engine.
+Use `archivebench preset inspect PRESET.json --context OBSERVATIONS.json` to distinguish incompatible formats/hardware from untested footage. Context can contain `supported_encoders`, `supported_pixel_formats`, `footage`, and `skip_sample_check`; inspection never establishes current-project validation. Use `preset import SETTINGS.json --output PRESET.json --name NAME --description EXPLANATION` for legacy settings, whose imported evidence starts unknown/unreviewed. Export the report's portable preset when its scope and evidence are available.
 
 A useful preset names the codec and implementation (for example HEVC with NVIDIA or AV1 with a CPU encoder) and retains exact controls, format/retention policy, tested footage characteristics, hardware/build and measured/visual evidence. A codec name alone is insufficient. Keep source/destination paths in each project's job, not in reusable preset data.
 

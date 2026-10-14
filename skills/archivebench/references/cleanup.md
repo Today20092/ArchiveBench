@@ -4,6 +4,8 @@ Cleanup permanently deletes originals. It requires an explicit cleanup request c
 
 Establish user visual acceptance and required editor reopening/relinking for the specific replacements. Changed source/output files invalidate that acceptance. Use installed job/review operations when present. Legacy `--reviewed` is a caller assertion, not an automated editing check; explain the missing evidence rather than treating the flag as proof.
 
+For new jobs, `archivebench acceptance inspect --output DESTINATION` must report current visual and editor acceptance against the verified replacements. `--reviewed` cannot bypass missing job acceptance. Inspect the mapping, all unmet requirements, and keep-original exceptions before cleanup; recording acceptance requires the user's actual review and editor check.
+
 ```powershell
 archivebench cleanup --output DESTINATION
 ```

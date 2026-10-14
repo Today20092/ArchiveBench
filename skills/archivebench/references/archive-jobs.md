@@ -1,16 +1,18 @@
 # Run a reusable archive
 
-Inspect `archivebench archive --help` and any installed job commands. The established interface works on different projects by changing its roots:
+Use the shared reusable job commands. A job snapshots its preset and keeps paths, exceptions and resume state separate from historical preset evidence:
 
 ```powershell
-archivebench archive --source SOURCE --output DESTINATION --settings SETTINGS
-archivebench archive --source SOURCE --output DESTINATION --settings SETTINGS --execute
+archivebench job create JOB.json --source SOURCE --output DESTINATION --preset PRESET.json
+archivebench job inspect JOB.json
+archivebench job run JOB.json
+archivebench job run JOB.json --execute
 ```
 
-The first command reviews the list; use the second for an authorized encode. Maintain a separate manifest/output root per project and retain the settings used. Relative subfolders are retained. The runner preserves originals and resumes with matching inputs/settings. Do not change a preset underneath a resumed job. If the installed release provides job files, snapshot settings there and use its explicit exception mechanism.
+Create a separate job/output root per project. Inspection does not encode. Execution probes, encodes and verifies; repeating it resumes matching inputs. Use `--exceptions EXCEPTIONS.json` on job creation for a list such as `[{"path":"night/clip.mov","action":"keep-original"}]`. A stronger-setting exception also provides `"preset":"stronger.json"`; only an explicitly stronger setting with the same format/retention policy is allowed. Never silently choose overrides.
 
 The legacy runner writes `.archive.mkv`, rejects unsupported streams and discards encodes below its savings threshold. Check timecode, data streams, sidecars and proprietary metadata before replacement. Container or filename changes can affect project relinking. Unsupported cases keep originals until a tested adaptation exists; a converted video playing successfully does not certify an editing project.
 
-Report actual bytes and savings after verification, including retained streams. Verify source/output identity, stream retention and decode checks. Have the user review representative outputs and reopen/reconnect the intended editing project. Record which project/editor and outputs were checked; unsupported editor workflows remain unverified.
+Report actual bytes and savings including retained streams. Run `archivebench acceptance inspect --output DESTINATION` for the mapping and evidence gaps. After actual human review, use `acceptance record --output DESTINATION --kind visual --decision accept --reviewer NAME`. Record the separate editor check with `--kind editor --decision accept --reviewer NAME --editor "NAME VERSION" --project-copy COPY`. Never fabricate attestations. Unsupported editor workflows remain unverified.
 
 Completion: each authorized file has a verified output or an explicit keep-original/failure outcome, and required visual/editor acceptance is recorded separately from automated checks.

@@ -1,6 +1,6 @@
 # Agent and terminal delivery verification
 
-Status: open
+Status: in-progress
 Readiness: ready-for-agent
 Blocked by: 01-installable-skill, 02-portable-presets, 03-bounded-experiments, 04-native-review, 05-reusable-jobs, 06-replacement-acceptance
 
@@ -29,5 +29,7 @@ Python 3.11 locked sync, pytest, Ruff format/check, ty, bundled JS build, report
 
 ## Comments
 
-Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
+Specified from the user-approved interview on 2026-10-14. Dependencies completed on the integration branch before delivery began. Updated installed references and terminal/installation/release documentation around actual shipped commands. Isolated wheel, named-client discovery, paired bounded model evaluation and two-folder terminal smoke are in progress. Aggregate integration regression/review remains required before closure. The camera benchmark and original checkout are untouched.
+
+Delivery evidence is in docs/delivery-evaluation.md; raw synthetic/client artifacts remain outside checkout. Installed-wheel terminal two-folder jobs and packaged-skill discovery passed. Actual paired model attempts include inherited-model rejection, advertised-default bounded comparisons, partial scratch failures and a baseline timeout. Skill comparison/preset/job planning executed, but explicit model-driven archive execution stopped on WinError5 even with owned TMP/TEMP; this acceptance gap remains open. Focused test_skill, resource links, quick skill validator, Ruff format/check, ty and local wheel/sdist passed. Final serialized regression and review belong to the integration owner.
 
