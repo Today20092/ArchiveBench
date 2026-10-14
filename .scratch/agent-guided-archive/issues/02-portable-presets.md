@@ -1,6 +1,6 @@
 # Portable preset contract and evidence
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: none
 
@@ -25,6 +25,8 @@ Likely areas: archivebench/archive.py validation, formats.py, cli.py, report.py,
 Contract round-trip, invalid-input, scope mismatch and legacy regression tests; report export math tests and browser checks when touched; all required development checks.
 
 ## Comments
+
+Integration validation on 2026-10-14: 58 pytest tests passed on Python 3.11 with the test process restricted to four logical CPUs, serialized against other development suites. Ruff format/check, ty, 15 report math tests and combined package build passed. Implementer recorded focused preset/installer tests, offline browser exports, still review and two playback checks. Earlier load-sensitive regression failures were resolved by the passing serialized run. Contract is available for dependent tickets in archivebench/presets.py and design.md.
 
 Implemented the version 1 portable preset contract, legacy import and inspection, preset consumption by the existing archive runner, and offline report export. The schema and public seams are recorded in the design. Original camera runs remain unchanged.
 

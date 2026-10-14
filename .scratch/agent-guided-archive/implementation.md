@@ -12,3 +12,5 @@ Ready initially: 01 installable skill, 02 portable presets. Tickets 03/04/05 dep
 Implementers use separate branches/worktrees, the TDD skill and the public seams approved in spec.md. Each merges the integration tip before completion. A merger subagent integrates completed branches sequentially. Final code review compares the pinned baseline to the integration branch, with separate standards and specification reviews; one implementer fixes findings. Generated media/private configurations stay out of Git.
 
 Acceptance exploration notes are stored outside the repository. Manual native-viewer and editor evidence must report actual observed results; untested combinations remain explicit.
+
+Tickets01/02 integrated and complete. Combined Python3.11 regression passed 58 tests, Ruffformat/check and ty passed, reportmath15passed, packagebuildpassed. The test process used four logical CPUs and no concurrent development suite. Ticket-specific native still/playback/browser/package checks are recorded in ticket comments. The next ready frontier is03bounded experiments,04native review and05reusable jobs.

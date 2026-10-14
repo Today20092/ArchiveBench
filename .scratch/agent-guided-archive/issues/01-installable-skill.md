@@ -1,6 +1,6 @@
 # Installable agent skill
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: none
 
@@ -27,6 +27,8 @@ Likely areas: a new skills/archivebench/ package, docs/agent-workflow.md, docs/i
 Validate skill metadata/references and run a documented smoke walkthrough outside the checkout. Follow docs/development.md for code/package changes.
 
 ## Comments
+
+Integration validation on 2026-10-14: 58 pytest tests passed on Python 3.11 with the test process restricted to four logical CPUs, serialized against other development suites. Ruff format/check, ty, 15 report math tests and combined package build passed. Ticket-specific validator, isolated installed-wheel smoke and playback checks were recorded by the implementer. Earlier concurrent-load regression failures were resolved by the serialized passing run; no failing checks were hidden. Paired agent evaluation and final skill updates remain assigned to ticket07.
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
 
