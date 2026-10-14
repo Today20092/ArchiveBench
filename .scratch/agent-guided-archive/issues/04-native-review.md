@@ -1,6 +1,6 @@
 # Native visual comparison and saved decisions
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -25,6 +25,8 @@ Likely areas: archivebench/media.py, cli.py, report review/export code, docs/ins
 Argument/path tests, review-record invalidation tests, actual viewer smoke test, and offline browser/native-still/playback checks for affected report features. Mark untested display/editor combinations explicitly.
 
 ## Comments
+
+Combined integration checks passed on 2026-10-14: Python3.11 pytest70passed, Ruffformat/check/ty, reportmath15, bundledJS build, freshsyntheticdemo andofflinebrowser/native-still/playback2/packagebuild. Native-viewer screenshots of synthetic source/candidate were inspected: matching1.250s positions and movingframe markers. Requested10bit renderer used a10bit video surface while desktop presentation remained8bit; no monitorfidelity or realcamera visualacceptance is claimed. Job-specific replacement acceptance belongs to ticket06.
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
 

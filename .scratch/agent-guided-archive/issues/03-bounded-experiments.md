@@ -1,6 +1,6 @@
 # Bounded comparisons and useful progress
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -26,6 +26,8 @@ Likely areas: archivebench/core.py, cli.py, validation.py, docs/benchmark.md and
 Tests for bounded work, cache reuse, progress stages, missing/failed evidence and resume; real small FFmpeg exercise; standard Python/report checks for touched areas.
 
 ## Comments
+
+Combined integration checks passed on 2026-10-14: Python3.11 pytest70passed with four logical test CPUs, Ruffformat/check andty, reportmath15, bundledJS build, freshsyntheticdemo, offlinebrowser, native-still, playback2 andpackagebuild. Actual capped/resume/budget/progress tests recorded by implementer; no realcamera comparison was restarted.
 
 Specified from the user-approved interview on 2026-10-14. Implementing in the isolated archive-experiments worktree, based on the integration branch. CLI plan/status and synthetic benchmark/results are the approved public test boundaries. The current camera benchmark checkout remains untouched. Completion awaits combined integration checks.
 

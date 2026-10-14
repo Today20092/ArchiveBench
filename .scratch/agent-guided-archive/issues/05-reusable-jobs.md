@@ -1,6 +1,6 @@
 # Reusable folder jobs and explicit exceptions
 
-Status: in-progress
+Status: done
 Readiness: ready-for-agent
 Blocked by: 02-portable-presets
 
@@ -26,6 +26,8 @@ Likely areas: archivebench/archive.py, cli.py, docs/archiving.md and archive int
 Two-folder integration test; interruption/resume; changed preset/source/output; exception and traversal/collision checks; retained audio/metadata and insufficient-savings cases; standard development checks.
 
 ## Comments
+
+Combined integration checks passed on 2026-10-14: Python3.11 pytest70passed with serialized four-logical-CPU tests, Ruffformat/check andty, reportmath15/build, freshdemo/offlinebrowser/native-still/playback2 andpackagebuild. Twofolder, exceptions, snapshot, interruption/resume, changedmedia, unsupportedpreservation andactualsavings tests passed. Jobcleanup remains intentionally guarded until ticket06 supplies scoped visual/editor acceptance. No camera archives or deletion performed.
 
 Specified from the user-approved interview on 2026-10-14. Implementation has not started. Readiness means specified; dependency completion is still required. Keep the current camera benchmark and earlier uncommitted work intact.
 
