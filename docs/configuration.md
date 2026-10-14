@@ -88,6 +88,14 @@ Existing version 1 archive settings/manifests retain their previous AAC/drop-tra
 The runner writes MKV. Unsupported data streams and cover art stop a new archive job. Copied audio/subtitle payloads and attachment contents are verified, alongside stream selection, dispositions, metadata, chapters, video, hashes, savings and full audio/video decode. Application-specific metadata and editor compatibility still need a separate test. Originals remain intact until a separate, explicit cleanup.
 # Weak-moment visual review
 
+## Portable archive presets
+
+The report can export `archive-preset.json` alongside the legacy archive-settings export. A version 1 preset wraps exact settings, a human explanation, historical footage/hardware scope, sample coverage and exclusions. It contains no project source/output roots. Browser visual marks do not become visual acceptance in a preset.
+
+Terminal users can run `archivebench preset import archive-settings.json --output preset.json --name "HEVC CPU"`, `archivebench preset inspect preset.json`, and `archivebench preset export preset.json --output another-preset.json`. Existing outputs are not overwritten. `archive --settings preset.json --source INPUT --output OUTPUT` uses the same runner on any selected folder. Preset inspection accepts `--context observations.json` with actual `supported_encoders`, `supported_pixel_formats`, footage characteristics and optional `skip_sample_check`. Unsupported hardware/format and untested footage are reported separately. Observations and skipping a check never grant current-project validation.
+
+Preset settings are bound to their saved evidence by a canonical settings fingerprint. Edited settings or encoder controls are rejected; create new evidence for new choices. This detects accidental changes, not forged evidence. Source-mode format controls are symbolic: the runner resolves each source's actual format. Existing version 1/2 settings and manifests retain their documented behavior. Legacy imports have unknown scope until new measurements exist.
+
 Validated finalists receive paired PNG stills after scoring, within the remaining invocation budget. The report offers every measured tuning and validation sample for the selected settings. Stills select up to three scored frames at least one second apart. Sparse scores can supply fewer moments. Each pair uses the same decoded frame index and sample-relative time, including when scoring skips frames.
 
 The originals and encodes retain their native image dimensions. Crop zoom and horizontal/vertical position use the same normalized region in each image. Enlarging a smaller output does not recover detail. RGB PNG display conversion and browser rendering cannot certify preservation of 4:2:2 chroma or 10-bit detail.

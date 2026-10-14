@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {project,smallest,durationText,pareto,archiveSettings,configurations,eligible,tradeoff,recommendations} from './math.js';
+import {project,smallest,durationText,pareto,archiveSettings,archivePreset,configurations,eligible,tradeoff,recommendations} from './math.js';
+test('portable preset exports historical scope without private paths or new validation',()=>{
+ const result=collection();result.environment={cpu:'test CPU',private_path:'C:/private'};result.trials[0].preset_encoder_options=['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p'];
+ result.samples[0].video={width:1920,height:1080,pix_fmt:'yuv420p',fps:'30/1',path:'C:/private/clip.mov'};
+ const preset=archivePreset(result,result.trials[0]);
+ assert.equal(preset.type,'archive-preset');assert.equal(preset.evidence.visual_status,'unreviewed');
+ assert.deepEqual(preset.encoder_options,['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p']);
+ assert.equal(JSON.stringify(preset).includes('C:/private'),false);
+});
 test('projections convert seconds/bytes consistently',()=>{const row=project({bytes:1073741824,encode_seconds:40},20,10);assert.equal(row.gib,30);assert.equal(row.minutes,20);});
 test('winner must meet target, not merely be closest',()=>{assert.equal(smallest([{bytes:1,vmaf:90},{bytes:2,vmaf:96}],95).bytes,2);assert.equal(smallest([{bytes:1,vmaf:90}],95),null);});
 test('duration formatting',()=>{assert.equal(durationText(100),'1h 40m');});

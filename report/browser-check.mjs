@@ -143,6 +143,12 @@ try {
   const settings = await downloadJSON('#export');
   assert.equal(settings.name, 'archive-settings.json');
   assert.equal(settings.data.version, 2); assert.equal(settings.data.audio_mode, payload.config.audio_mode ?? 'copy');
+  const preset = await downloadJSON('#export-preset');
+  assert.equal(preset.name, 'archive-preset.json');
+  assert.equal(preset.data.type, 'archive-preset');
+  assert.deepEqual(preset.data.settings, settings.data);
+  assert.equal(preset.data.evidence.visual_status, 'unreviewed');
+  assert.ok(preset.data.encoder_options.includes('-c:v'));
   const decision = await downloadJSON('#export-decision');
   assert.equal(decision.name, 'archive-decision.json');
   assert.equal(decision.data.selected.samples[0].visually_reviewed, true);

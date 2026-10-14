@@ -9,12 +9,27 @@ from typing import Any
 from .formats import format_variants
 from .media import safe_asset_path
 from .validation import quality_targets
+from .presets import encoder_options
+from .encoders import SPECS
 
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
     for trial in value["trials"] + value.get("screening", []):
         trial.pop("output", None)
+        if trial.get("encoder") in SPECS and "pixel_format" in trial:
+            trial["preset_codec"] = SPECS[trial["encoder"]][0]
+            variant = next(
+                (
+                    item
+                    for item in value["config"].get("variants", [])
+                    if item["id"] == trial.get("variant")
+                ),
+                value["config"],
+            )
+            trial["preset_encoder_options"] = encoder_options(
+                {**trial, "pixel_format": variant.get("pixel_format", trial["pixel_format"])}
+            )
         for field in ("review_media", "review_stills"):
 
             def sanitize_assets(item: Any) -> None:

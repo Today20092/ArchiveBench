@@ -3,7 +3,7 @@ import { tooltip } from '@tanstack/charts/tooltip';
 import { portal } from '@tanstack/charts/tooltip/portal';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { scaleBand } from '@tanstack/charts/scales/band';
-import { configurations, eligible, recommendations, durationText, pareto, archiveSettings, tradeoff, qualityTargets, validationTarget } from './math.js';
+import { configurations, eligible, recommendations, durationText, pareto, archiveSettings, archivePreset, tradeoff, qualityTargets, validationTarget } from './math.js';
 import { evidenceTrials, renderStills } from './stills.js';
 import { pairedPlayback, safeAssetPath } from './playback.js';
 
@@ -390,6 +390,7 @@ $('sample-evidence').addEventListener('click', event => {const button = event.ta
 $('weak-moments').addEventListener('click', event => {const button = event.target.closest('[data-seek]'); if (button) seek(Number(button.dataset.seek));});
 $('reviewed').addEventListener('change', () => {if ($('reviewed').checked) reviewed.add(inspectedTrialId); else reviewed.delete(inspectedTrialId); render();});
 $('export').addEventListener('click', () => {const trial = result.trials.find(row => row.id === inspectedTrialId); if (trial) download('archive-settings.json', archiveSettings(result, trial));});
+$('export-preset').addEventListener('click', () => {const trial = result.trials.find(row => row.id === inspectedTrialId); if (trial) download('archive-preset.json', archivePreset(result, trial));});
 $('export-decision').addEventListener('click', () => {
   const state = current(), selected = state.rows.find(row => row.id === selectedId), baseline = state.rows.find(row => row.id === pinnedId);
   if (!selected) return;
