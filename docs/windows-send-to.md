@@ -1,32 +1,64 @@
 # Windows Send to launcher
 
-[Back to the README](../README.md#windows-send-to) · [Archive jobs](archiving.md)
+[Back to the README](../README.md#windows-send-to) · [Terminal UI](terminal-ui.md) · [Archive jobs](archiving.md)
 
-This optional per-user launcher calls the installed `archivebench` CLI. It selects a saved preset and creates or resumes a project job; it does not run a benchmark or cleanup. Install the current revision using [installation](installation.md); older releases may lack `archivebench-send-to`.
+Select folders, clips or a mixture in Explorer, then choose **Send to > Archive footage**. Windows 11 may require **Show more options** first. Send to passes those sources to ArchiveBench. Choose the output folder inside the TUI, review preflight and press Start. It does not start a benchmark or delete originals.
 
-```powershell
-archivebench-send-to --install --preset-directory "D:\Archive Presets"
-```
+## Install or update
 
-From a source checkout, the installer is also available as `uv run archivebench-send-to --install --preset-directory "D:\Archive Presets"`. An installed `archivebench` command must be on PATH for use outside that checkout. Without a directory argument, the preset library is `ArchiveBench Presets` under your Windows Documents folder. The installer creates it if missing; export your approved JSON presets there.
-
-To install or update the persistent commands from this checkout, first finish any running ArchiveBench jobs, then run:
+The current TUI workflow is unreleased. Use a checkout containing these changes; the historical v0.1.0 wheel does not supply the current interface. Finish running ArchiveBench jobs before replacing the installed tool:
 
 ```powershell
 uv tool install --python 3.11 --force .
 uv tool update-shell
 ```
 
-Open a new terminal if needed for PATH changes. Updating the tool is separate from installing the shortcut; the shortcut installer does not replace your runner.
+Open a new terminal if PATH changed, then install or refresh the shortcuts:
 
-The installer copies the launcher to `%LOCALAPPDATA%\ArchiveBench\SendTo` and adds `ArchiveBench.lnk` to your Windows SendTo folder. The shortcut targets Windows PowerShell directly, so folder arguments are not interpolated into a batch command. Installation does not grant broader permissions or bypass PowerShell execution policy. If your policy blocks scripts, follow your organization's approved script-signing policy or use the terminal workflow. Keep FFmpeg/ffprobe and the current CLI on PATH.
+```powershell
+archivebench-send-to --install --preset-directory "D:\Archive Presets"
+```
 
-Right-click one footage folder, choose **Send to → ArchiveBench**, select a numbered preset, inspect preflight, and type `ARCHIVE`. Anything else cancels encoding. Empty preset selection cancels without creating a job. Errors stay visible in the console. Multiple folders and individual files are rejected; send one folder at a time.
+Updating the installed tool and refreshing the shortcuts are separate operations. Keep FFmpeg, ffprobe and ArchiveBench on PATH. Without a preset-directory argument, the installer uses `ArchiveBench Presets` under your Windows Documents folder and creates it if missing. Export your chosen JSON presets there.
 
-The default output is `<source>-Archived-<preset-filename>` with an adjacent `<output>.job.json`. Repeating the same selection resumes that exact job: verified files are skipped, pending/interrupted files start again. The launcher refuses different settings under an existing job; save the changed preset with a different filename or choose another output through the terminal/script. It never changes an existing job's saved preset snapshot. Prepare any keep-original/stronger-setting exceptions through the regular CLI before the job's first encode; do not change an existing execution snapshot.
+The installer creates these per-user shortcuts:
 
-For a custom destination or inspection only, invoke the copied PowerShell script with `-SourcePath`, `-Preset`, `-OutputPath` and optionally `-InspectOnly`. Inspection performs short scratch probes. Output verification, source hashes, actual savings and full decode checks remain in the shared runner. Successful encoding is separate from visual/editor acceptance and never removes originals.
+| Shortcut | Current behavior |
+| --- | --- |
+| Archive footage | Opens the TUI with the selected sources. |
+| Archive footage (terminal) | Opens the same TUI. The older name is retained. |
+| Review originals for deletion | Opens the separate legacy cleanup selector for one archive folder, with acceptance and verification checks. |
 
-To remove the integration, open `shell:sendto` in Explorer and delete only `ArchiveBench.lnk`; remove its copied `archivebench-send-to.ps1` from `%LOCALAPPDATA%\ArchiveBench\SendTo` if no longer needed. Presets, jobs, archives and originals are unaffected. Rerun the installer to refresh the generated shortcut/launcher after an update.
+Both archive shortcuts launch `archivebench-tui` directly through the Windows console host. They do not need a PowerShell runtime wrapper. PowerShell is still used by the installer and cleanup launcher. Installation does not bypass execution policy.
 
-Windows checks cover actual shortcut creation/target arguments and scripted console selection, synthetic encode, resume and cancellation, including spaces and metacharacters in paths. The interactive Explorer menu click still needs a human smoke check. No real-camera quality acceptance is inferred from these tests.
+The default console shortcut fits its dedicated window to the monitor work area. Ordinary `archivebench-tui` commands keep the existing terminal size. To use an installed WezTerm instead:
+
+```powershell
+archivebench-send-to --install --terminal wezterm --preset-directory "D:\Archive Presets"
+```
+
+WezTerm keeps your normal configuration. Use `--terminal conhost` to restore the default host.
+
+## Select a destination and resume
+
+Sources must share one drive; the output may be on another drive. Overlapping selections are deduplicated and relative paths beneath the common source folder are preserved. The TUI proposes `Archived Footage` under that folder. A directly selected `Original Footage` folder gets a sibling `Archived Footage` destination. Review the proposed destination when combining unrelated folders.
+
+Choose a preset and destination in Settings, then run preflight in Review. Start becomes available after successful preflight. The saved job holds the selected files and settings; the log is beside it. Resume that exact job:
+
+```powershell
+archivebench-tui --job "D:\Project\Archived Footage.job.json"
+```
+
+Completed files must still pass identity checks. An interrupted file restarts from its beginning. Different selections or settings cannot silently replace an existing job. Use a different destination for another preset version. See [the TUI guide](terminal-ui.md) for safe stopping and [archive verification](archiving.md) for acceptance and cleanup.
+
+## Legacy launchers
+
+The packaged `windows/install-send-to.ps1` script accepts `-Legacy`. This is a script option, not an `archivebench-send-to` CLI option. It restores the older Tkinter selector for **Archive footage** and numbered prompts for **Archive footage (terminal)**. The latter accepts one folder, asks for a preset and requires typing `ARCHIVE` after preflight.
+
+The legacy numbered launcher defaults to `<source>-Archived-<preset-filename>` with an adjacent `.job.json`. Its copied PowerShell script accepts `-SourcePath`, `-Preset`, `-OutputPath` and `-InspectOnly`. These defaults and prompts do not describe the current TUI. See [the legacy desktop guide](archive-desktop.md).
+
+## Remove the shortcuts
+
+Open `shell:sendto` in Explorer and delete the three named shortcuts. Copied scripts under `%LOCALAPPDATA%\ArchiveBench\SendTo` can also be removed if no longer needed. Presets, jobs, archives and originals are unaffected. The installer removes older `ArchiveBench`, `ArchiveBench Desktop` and `ArchiveBench Cleanup` shortcut names when updating.
+
+Automated shortcut and terminal checks do not establish that Explorer launching works on every installation. Verify an actual Explorer selection separately. Synthetic encode tests do not establish camera-footage quality or editor acceptance.

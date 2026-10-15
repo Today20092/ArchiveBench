@@ -9,9 +9,11 @@
 - Install FFmpeg and ffprobe on PATH. Choose a full build with `libvmaf` and the software encoders you want to test. The [FFmpeg download page](https://ffmpeg.org/download.html) links to platform builds. Windows full builds are available from [Gyan](https://www.gyan.dev/ffmpeg/builds/).
 - Allow scratch space for lossless sample references, candidate clips and optional review assets. The source files remain in place.
 
-No runtime Python dependencies or Node installation are needed to run the installed tool. Git is needed only for the source-checkout route below. FFmpeg is installed separately and is not bundled with ArchiveBench.
+The current package depends on Textual for its terminal UI; uv installs the Python dependencies. Node is not needed to run ArchiveBench or view its reports. Git is needed only for the source-checkout route below. FFmpeg is installed separately and is not bundled with ArchiveBench.
 
 ## Install the command
+
+For the current TUI and Send to workflow, use [a source checkout](#install-a-source-checkout) containing the unreleased changes. The download below is for the historical release.
 
 Install the wheel from the initial GitHub release:
 
@@ -48,6 +50,14 @@ uv run archivebench benchmark local-config.json --output runs/first-test
 ```
 
 Follow [AGENTS.md](../AGENTS.md) and the [agent workflow](agent-workflow.md) when adapting or operating the checkout. Developers rebuilding the report also need Node; see [development checks](development.md).
+
+If you already have presets, open the interactive archive workflow directly:
+
+```powershell
+uv run archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
+```
+
+Omit the source path to start with an empty selection. See [the TUI guide](terminal-ui.md). To install persistent commands from this checkout, finish any running jobs, then run `uv tool install --python 3.11 --force .` and `uv tool update-shell`. Follow [Windows Send to](windows-send-to.md) to add or refresh the Explorer shortcuts. A fresh clone contains committed changes only; local uncommitted additions are not included until published.
 
 ## Check the environment
 

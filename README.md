@@ -1,6 +1,8 @@
 # ArchiveBench
 
-ArchiveBench does two things: **benchmark your footage to choose archive presets**, then **use those presets to archive future projects**. Compare encoders on your CPU/GPU, examine the offline report and footage, save the settings you accept, and reuse them on different folders with verified resumable jobs. Use an agent, the terminal or the optional Windows Send to launcher.
+ArchiveBench benchmarks your footage to help you choose archive presets, then uses those presets to create smaller, verified copies of future projects. Originals stay intact.
+
+The current development focus is the terminal UI, `archivebench-tui`. Select folders or clips, choose a preset and destination, review preflight, then encode or resume a saved job. Windows **Send to > Archive footage** opens the same UI. These changes are in the working checkout; the historical v0.1.0 download does not include the current workflow. See the [current development summary](docs/release-notes.md).
 
 <p align="center">
   <a href="pyproject.toml"><img alt="Version: 0.1.0" src="https://img.shields.io/badge/Version-0.1.0-C4A7E7?style=for-the-badge&amp;labelColor=493267"></a>
@@ -9,7 +11,18 @@ ArchiveBench does two things: **benchmark your footage to choose archive presets
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-F4C98B?style=for-the-badge&amp;labelColor=75512B"></a>
 </p>
 
-[Install](docs/installation.md) · [Benchmark and choose presets](#start) · [Archive future projects](#archive-future-projects) · [Resume](#resume-an-archive-job) · [Windows Send to](#windows-send-to) · [Read the report](#read-the-report) · [Settings](docs/configuration.md) · [Release notes](docs/releases.md)
+[Install](docs/installation.md) · [Terminal UI](docs/terminal-ui.md) · [Windows Send to](docs/windows-send-to.md) · [Choose presets](#start) · [Archive jobs](#archive-future-projects) · [Current changes](docs/release-notes.md) · [Published releases](docs/releases.md)
+
+## Open the terminal UI
+
+From a checkout containing the current changes:
+
+```powershell
+uv sync --locked --python 3.11
+uv run archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
+```
+
+Follow **Clips > Settings > Review > Progress**. Add sources, select clips, choose a saved preset and output folder, then run preflight before Start. You can stop safely and resume the exact saved job later. If you have no presets yet, [compare representative footage](#start) first. See the [TUI guide](docs/terminal-ui.md) for audio, container, timecode and resume options.
 
 ## How it works
 
@@ -25,6 +38,12 @@ For example, approve a higher-quality match-source preset and a smaller 10-bit 4
 [Open the user-flow diagram](docs/diagrams/user-flow.html). Cleanup is a separate decision after visual review and verification.
 
 ## Start
+
+**Start with a quick comparison.** Select your camera footage, CPU/GPU encoders (or `all`), explicit output formats and a total time allowance, default 30 minutes. Setup saves five-second sections and two fixed compression settings per encoder. The runner measures their actual quality, storage and speed without chasing a VMAF target. It compares one setting per encoder before the second setting, then checks the first scene's measured frontier on additional selected scenes while time remains.
+
+The allowance includes hashing, reference preparation, encoding, scoring and review/report preparation. Estimates update after measurements; unknown or unfinished work stays visible. Process cleanup and final report writes can slightly overrun the deadline. Run the benchmark alone for meaningful speed comparisons. Encoder automatic threading uses available hardware; a bounded scoring calibration checks whether a lower thread count improves throughput. The report records timing scope and preparation/scoring costs separately from encoding.
+
+The report exports **measured starting presets**, which you can visually review and use with the archive workflow below on future folders. A short comparison does not certify unseen footage. For advanced exact-quality searches, explicitly use `archivebench setup --strategy tune`; existing saved configurations retain their original tuning behavior. See [quick comparison and refinement](docs/quick-comparison.md).
 
 Follow the [terminal workflow](docs/terminal-workflow.md), or [install the agent skill](docs/installation.md#install-the-optional-agent-skill). Both use the same commands and evidence.
 
@@ -44,7 +63,7 @@ uv run archivebench plan local-config.json
 uv run archivebench benchmark local-config.json --output runs/first-test
 ```
 
-Setup asks for footage sections, format variants, quality levels, encode repeats and a time budget. Review its proposed validation samples before you run the benchmark. See [configuration](docs/configuration.md) for the saved fields.
+Default setup asks for footage sections, encoders, format variants, encode repeats and a time budget. Advanced target tuning also asks for quality levels and fresh validation sections. See [configuration](docs/configuration.md) for the saved fields.
 
 Open `runs/first-test/report.html`. No server, internet connection or Node installation is needed to view it. Follow [the report steps below](#read-the-report) to compare measurements and review the clips.
 
@@ -56,7 +75,7 @@ Select motion, fine detail and dark/noisy examples. A representative sample is m
 
 ## What is measured
 
-ArchiveBench screens configured H.264, H.265, AV1 and VP9 encoders, including hardware encoders that pass an actual encode test. It tunes promising candidates within your budget and reports failures and unmet targets.
+ArchiveBench compares configured H.264, H.265, AV1 and VP9 encoders, including hardware encoders that pass an actual encode test. The default fixed comparison measures saved settings within your budget. The target-tuning workflow below searches compression settings and reports failures and unmet targets.
 
 Compare named format variants in one run, including **Match source** for mixed footage. A project candidate uses the same encoder and quality across scenes. It qualifies only when every required sample passes, then the smallest and fastest finalists are checked on fresh sections that were excluded from tuning. Failed and incomplete evidence stays visible.
 
@@ -73,9 +92,9 @@ VMAF is a model score, not a percentage of original quality. Measurements cover 
 ## Read the report
 
 1. Start with the whole collection. Use the size/time and quality/size charts to find measured settings that fit your priorities. The shaded areas show the preferred direction; they do not certify a result.
-2. Compare the saved quality levels. The table shows the smallest validated collection choice at each target, its weakest tuning and validation scores, and projected video size and encoding time. Missing or unmet targets stay explicit.
+2. Check coverage. Fixed comparisons show measured starting points, including incomplete work. For target-tuning runs, compare the smallest validated collection choice at each saved target, its weakest tuning and validation scores, and projected video size and encoding time. Missing or unmet targets stay explicit.
 3. Select a setting from a chart or choice card. Use the two setting selectors to compare size, time and VMAF differences for the same sample coverage. Open the sortable measurements table for details.
-4. Inspect the evidence and footage. Review matched native-size stills at saved low-scoring moments with crop and zoom controls. Use paired playback to inspect motion, then open the exact measured MKV in a native player. Browser review previews use H.264 8-bit 4:2:0 and cannot prove source-format fidelity.
+4. Inspect the evidence and footage. Quick comparisons defer browser assets by default; use [review preparation](docs/quick-comparison.md) for a selected trial or open its exact files in the native viewer. When assets are available, inspect matched native-size stills and paired playback. Browser review previews use H.264 8-bit 4:2:0 and cannot prove source-format fidelity.
 5. Use **Export reusable preset** to save each choice as a JSON file in your permanent preset folder. Give it a recognizable filename, such as `lumix-higher-quality.json` or `lumix-smaller.json`. The preset carries exact settings, measured evidence, scope and saved visual-review references. Legacy archive-settings exports and decision summaries remain available. Review marks do not authorize cleanup.
 
 The report starts with the selected sources' combined duration. Changing duration scales that source mix to estimate video size and encoding time. Target and duration controls use saved measurements; they do not run new tests or change the saved experiment conclusion. Older results without full source durations show a labeled sample-duration estimate.
@@ -128,9 +147,9 @@ Install the current ArchiveBench command on PATH, save your approved presets in 
 archivebench-send-to --install --preset-directory "D:\Archive Presets"
 ```
 
-Right-click **one footage folder → Send to → ArchiveBench** (Windows 11 may require **Show more options**). A console lists your presets. Choose one, inspect the plan, then type `ARCHIVE` to start. The launcher calls the same job engine; it does not benchmark or delete originals.
+Select folders, clips or a mixture, then choose **Send to > Archive footage**. Windows 11 may require **Show more options**. Both archive shortcuts now open the TUI; the shortcut named **Archive footage (terminal)** is retained for compatibility. Source selections must share one drive. Choose the destination in Settings, run preflight in Review, then use Start. These shortcuts do not start a benchmark. **Review originals for deletion** opens the separate acceptance-gated cleanup workflow for one archive folder.
 
-By default, selecting `Originals` with `lumix-smaller.json` creates the sibling folder `Originals-Archived-lumix-smaller` and its adjacent `.job.json` checkpoint. Send the same folder to ArchiveBench with the same preset again to resume. Choosing a different preset uses a different output/job; changed settings under an existing name are refused. See [installation and removal](docs/windows-send-to.md).
+The TUI proposes `Archived Footage` beneath the selected project or common source folder, or beside a directly selected `Original Footage` folder. Review the destination, especially when combining projects. Resume with `archivebench-tui --job "D:\Project\Archived Footage.job.json"`. Saved jobs retain their exact settings and selected files; use a different destination for a different preset version. See [installation and removal](docs/windows-send-to.md).
 
 Review replacements and reopen your editing-project copy before reclaiming space. Editor relinking and proprietary metadata need a separate compatibility check.
 

@@ -1,5 +1,7 @@
 # Archive files and review cleanup
 
+Use [the terminal UI](terminal-ui.md) to select clips, choose a destination and preset, review output policies, and run or resume a job. [Windows Send to](windows-send-to.md) opens the same UI. The [legacy desktop workflow](archive-desktop.md) remains available, including the separate cleanup selector. Existing presets without a container still default to MKV; the text below describes those defaults.
+
 For reusable folder jobs, follow [editor reopening and replacement acceptance](editor-acceptance.md). The job workflow requires recorded visual and editor decisions bound to verified output identities before separate cleanup. Legacy manifests keep their existing documented handling.
 
 ## Reusable project jobs
