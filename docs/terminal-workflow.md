@@ -1,5 +1,7 @@
 # Archive completed projects from the terminal
 
+For an interactive interface with clip selection, preset comparison and progress, use [the terminal UI](terminal-ui.md). This guide covers the command-line and scripted workflow.
+
 The command and agent skill share one engine, preset format and job records. No agent or API key is needed here. Install the current revision using [installation](installation.md); the initial published 0.1.0 wheel may lack these commands. Check `archivebench --help`.
 
 ## Compare a small sample
@@ -13,7 +15,7 @@ archivebench benchmark comparison.json --output comparison-run
 archivebench status comparison-run
 ```
 
-Inspect the saved configuration before running. Start with `comparison: "initial"`, one representative tuning section and a separate fresh section, one or two compatible encoders, and `encode_repeats: 1`. Preserve source format/resolution and all audio unless you explicitly choose a transformation. The [configuration reference](configuration.md) explains limits, targets and retention. Plan exposes bounds and unknown estimates; budget is not a promised finish time. Screens/pilots add work. Changed experiments need a new output folder.
+Inspect the saved configuration before running. Setup defaults to `strategy: "fixed"`, five-second sections, two settings per encoder, one timing repeat and a 30-minute wall-clock allowance. Select encoders or enter `all`. Scores are observed without target tuning; the first scene gives an early CPU/GPU comparison. The report lists coverage, unfinished work and estimates. Preserve source format/resolution and all audio unless you explicitly choose a transformation. Use `setup --strategy tune` for advanced target searches and fresh validation. See [quick comparison](quick-comparison.md). Changed experiments need a new output folder.
 
 Open `comparison-run/report.html` beside its companion media. At your acceptable quality, compare fastest/smallest measured choices. VMAF is not a quality percentage or grading guarantee. Projections cover video only; actual archive savings include retained streams. Incomplete measurements cannot establish a recommendation.
 

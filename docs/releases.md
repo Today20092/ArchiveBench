@@ -1,5 +1,9 @@
 # Releases
 
+## Current development
+
+The TUI, revised Windows Send to workflow and quick fixed comparisons are documented in the [unreleased development summary](release-notes.md). That summary describes the current checkout, including local work, rather than the historical download below.
+
 ## 0.1.0
 
 ArchiveBench's first public release benchmarks archival video encodes on your own footage and hardware. It compares measured quality, encoding time and projected storage in an offline report.
