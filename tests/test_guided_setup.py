@@ -1,5 +1,9 @@
 import asyncio
 import json
+import shutil
+import subprocess
+
+import pytest
 
 from textual.widgets import Button, Checkbox, Input, Select, SelectionList, Static, TabbedContent
 
@@ -45,23 +49,57 @@ def test_first_use_comparison_requires_review_and_can_sample_selected_starter(tm
     asyncio.run(exercise())
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")
 def test_starter_can_decline_sampling_but_must_accept_uncertain_scope(tmp_path):
     async def exercise():
-        clip = tmp_path / "clip.mov"
-        clip.touch()
+        clip = tmp_path / "clip.mkv"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=64x64:rate=10",
+                "-t",
+                "0.5",
+                "-c:v",
+                "ffv1",
+                "-color_range",
+                "tv",
+                str(clip),
+            ],
+            check=True,
+        )
         app = ArchiveApp(library=tmp_path / "empty")
         async with app.run_test(size=(120, 60)) as pilot:
             app.root = tmp_path
-            app.query_one("#clips", SelectionList).add_option(("clip.mov", str(clip), True))
-            app.query_one("#preset", Select).value = str(app.preset_paths[1])
+            app.query_one("#clips", SelectionList).add_option(("clip.mkv", str(clip), True))
+            app.query_one("#preset", Select).value = str(app.preset_paths[3])
+            app.query_one("#container", Select).value = "mkv"
+            app.query_one("#timecode", Select).value = "reject"
             app.query_one("#output", Input).value = str(tmp_path / "output")
             await pilot.pause()
             app.prepare()
             await app.workers.wait_for_complete()
-            assert app.job_path is None
+            assert app.job_path is not None
+            assert not app.reviewed
+            assert app.query_one("#start", Button).disabled
+            assert not (tmp_path / "output" / "archive-manifest.json").exists()
+            assert not (tmp_path / "output" / "suitability-acceptance.json").exists()
             assert "Accept uncertain" in str(app.query_one("#status", Static).content)
             assert "unknown" in str(app.query_one("#scope-summary", Static).content)
             assert app.comparison_config is None
+            app.query_one("#scope-accept", Checkbox).value = True
+            app.prepare()
+            await app.workers.wait_for_complete()
+            assert app.reviewed
+            consent = json.loads((tmp_path / "output" / "suitability-acceptance.json").read_text())
+            assert consent["status"] == "accepted-uncertain"
+            assert not (tmp_path / "output" / "archive-manifest.json").exists()
+            assert app.comparison_config is None
+            assert clip.exists()
 
     asyncio.run(exercise())
 
