@@ -26,6 +26,11 @@ def test_progress_monitor_stops_a_silent_child(monkeypatch):
         return process
 
     monkeypatch.setattr(subprocess, "Popen", track)
+
+    def failed_tree_stop(*args, **kwargs):
+        raise subprocess.TimeoutExpired("taskkill", 10)
+
+    monkeypatch.setattr(subprocess, "run", failed_tree_stop)
     started = time.monotonic()
 
     def unavailable():
