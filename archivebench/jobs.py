@@ -20,6 +20,31 @@ from .presets import inspect_preset, make_preset, resolve_settings
 from .mux import suffix, mux_args, stream_gaps
 
 
+def discover_job(output: Path) -> dict[str, Any] | None:
+    """Find the immutable job beside its outputs, preferring the execution checkpoint."""
+    output = safe(output)
+    manifest_path = output / "archive-manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if "job" not in manifest:
+            raise ValueError(
+                "Destination contains a legacy archive; resume its original settings or choose another destination"
+            )
+        job = manifest["job"]
+    elif (output / "archive-job.json").exists():
+        job = json.loads((output / "archive-job.json").read_text(encoding="utf-8"))
+    elif Path(str(output) + ".job.json").exists():
+        job = json.loads(Path(str(output) + ".job.json").read_text(encoding="utf-8"))
+    else:
+        return None
+    validate_job(job)
+    if safe(Path(job["output_root"])) != output:
+        raise ValueError(
+            "Saved job destination differs; restore its original location or choose another destination"
+        )
+    return copy.deepcopy(job)
+
+
 @contextmanager
 def preflight_scratch(output: Path):
     parent = output

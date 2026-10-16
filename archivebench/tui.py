@@ -891,7 +891,7 @@ class ArchiveApp(App):
                 job = await asyncio.to_thread(
                     selected_job, self.root, Path(output), Path(preset), selected, policies
                 )
-                path = Path(str(job["output_root"]) + ".job.json")
+                path = Path(job["output_root"]) / "archive-job.json"
                 if path.exists():
                     if json.loads(path.read_text(encoding="utf-8")) != job:
                         raise ValueError(
@@ -929,10 +929,12 @@ class ArchiveApp(App):
         self.set_busy(True)
         self.query_one(TabbedContent).active = "step-progress"
         self.stop_pending = False
-        log_path = Path(str(self.job_path) + ".log")
         try:
             if hashlib.sha256(self.job_path.read_bytes()).hexdigest() != self.job_hash:
                 raise ValueError("Saved job changed; review it again")
+            snapshot = json.loads(self.job_path.read_text(encoding="utf-8"))
+            log_path = Path(snapshot["output_root"]) / "archive-job.json.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
             self.query_one("#status", Static).update(
                 f"{'Encoding / verifying' if execute else 'Preflight'} — log: {log_path}"
             )

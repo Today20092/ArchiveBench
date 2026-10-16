@@ -219,7 +219,7 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
             await app.workers.wait_for_complete()
             assert app.reviewed
             app.run_engine(True)
-            log_path = Path(str(job_path) + ".log")
+            log_path = output / "archive-job.json.log"
             for _ in range(600):
                 if log_path.exists() and "Encoding:" in log_path.read_text():
                     break

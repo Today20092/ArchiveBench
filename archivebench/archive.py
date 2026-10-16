@@ -39,6 +39,22 @@ def safe(path: Path, root: Path | None = None) -> Path:
 
 
 def candidates(root: Path) -> list[Path]:
+    if "".join(c for c in root.name.lower() if c.isalnum()) in (
+        "archivedfootage",
+        "archives",
+        "proxy",
+        "proxies",
+    ) or any(
+        (ancestor / marker).exists()
+        for ancestor in (root, *root.parents)
+        for marker in (
+            "archive-manifest.json",
+            "archive-job.json",
+            ".archive-reencoder.json",
+            "results.json",
+        )
+    ):
+        return []
     found = []
     for folder, directories, files in os.walk(root, followlinks=False):
         directories[:] = [
@@ -48,6 +64,7 @@ def candidates(root: Path) -> list[Path]:
             not in ("proxy", "proxies", "archivedfootage", "archives", "git", "node_modules")
             and not Path(folder, name).is_symlink()
             and not (Path(folder, name) / "archive-manifest.json").exists()
+            and not (Path(folder, name) / "archive-job.json").exists()
             and not (Path(folder, name) / ".archive-reencoder.json").exists()
             and not (Path(folder, name) / "results.json").exists()
         ]
@@ -326,7 +343,9 @@ def archive(
             dict.fromkeys([*manifest.get("selected_sources", []), *(str(path) for path in files)])
         )
         if job is not None:
-            manifest["job_path"] = str(settings_path.resolve())
+            local_job = output_root / "archive-job.json"
+            save(local_job, manifest["job"])
+            manifest["job_path"] = str(local_job)
         manifest["last_run"] = "running"
         save(manifest_path, manifest)
         for file_number, path in enumerate(files, 1):
@@ -404,6 +423,14 @@ def archive(
             if gaps:
                 raise ValueError("; ".join(gaps))
             output.parent.mkdir(parents=True, exist_ok=True)
+
+            def check_storage() -> None:
+                if not source_root.is_dir() or not path.is_file() or not output_root.is_dir():
+                    raise OSError("Source or destination disconnected; stopping batch")
+                if shutil.disk_usage(output_root).free < 1024**3:
+                    raise OSError("Low disk space (less than 1 GiB free); stopping batch")
+
+            check_storage()
             if not output.exists():
                 temporary = safe(
                     output.with_name(output.name + ".partial." + settings.get("container", "mkv")),
@@ -465,12 +492,15 @@ def archive(
                 args += [*mux_args(settings, info), str(temporary)]
                 print(f"Encoding: {path.name}", flush=True)
                 try:
-                    if job and job.get("progress"):
-                        from .progress import encode_progress
+                    from .progress import encode_progress
 
-                        encode_progress(args, float(info["format"]["duration"]), stop_requested)
-                    else:
-                        run(args, 86400)
+                    encode_progress(
+                        args,
+                        float(info["format"]["duration"]),
+                        stop_requested,
+                        check_storage=check_storage,
+                        visible=bool(job and job.get("progress")),
+                    )
                     print("Verifying complete output...", flush=True)
                     verify_archive(temporary, path, settings, ffmpeg, ffprobe)
                 except (RuntimeError, ValueError) as error:
@@ -478,8 +508,7 @@ def archive(
                     save(manifest_path, manifest)
                     if not job or not job.get("continue_on_error"):
                         raise
-                    if shutil.disk_usage(output_root).free < 1024**3:
-                        raise OSError("Low disk space; stopping batch") from error
+                    check_storage()
                     print(f"Failed; original kept: {error}", flush=True)
                     continue
                 temporary.replace(output)

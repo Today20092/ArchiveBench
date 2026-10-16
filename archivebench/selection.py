@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from .archive import candidates, safe
-from .jobs import create_job, validate_job
+from .jobs import create_job, discover_job, validate_job
 from .presets import make_preset, resolve_settings
 
 
@@ -70,4 +70,28 @@ def selected_job(
     available = {p.relative_to(source.resolve()).as_posix() for p in candidates(source.resolve())}
     if not set(selected).issubset(available):
         raise ValueError("Selection contains missing or excluded files")
+    saved = discover_job(output)
+    if saved is not None:
+        saved_selection = saved.get(
+            "selected_files",
+            [
+                p.relative_to(source.resolve()).as_posix()
+                for p in candidates(source.resolve())
+                if not p.is_relative_to(output.resolve())
+            ],
+        )
+        if saved["source_root"] != job["source_root"] or set(saved_selection) != set(
+            job["selected_files"]
+        ):
+            raise ValueError(
+                "Destination job selection conflicts; resume the saved selection or choose another destination"
+            )
+        if (
+            resolve_settings(saved["preset"]) != resolve_settings(job["preset"])
+            or saved["exceptions"] != job["exceptions"]
+        ):
+            raise ValueError(
+                "Destination job settings conflict; resume the saved settings or choose another destination"
+            )
+        return saved
     return job
