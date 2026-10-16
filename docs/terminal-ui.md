@@ -1,6 +1,6 @@
 # Archive with the terminal UI
 
-The current interactive archive workflow is `archivebench-tui`, a Textual application using the same preset and job engine as the CLI. It is under active development in this checkout and is not part of the historical v0.1.0 download. See [installation](installation.md) and [the development summary](release-notes.md).
+The interactive archive workflow is `archivebench-tui`, a Textual application using the same preset and job engine as the CLI. It is included in v0.2.0. See [installation](installation.md) and [release notes](release-notes.md).
 
 Run `uv run archivebench-tui` from the checkout, or `archivebench-tui` after installing the current package. Windows [Send to](windows-send-to.md) passes selected folders and clips into this same interface. Choose the archive destination inside the UI. It archives using existing presets; use [quick comparison](quick-comparison.md) to create starting presets first.
 

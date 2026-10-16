@@ -49,6 +49,9 @@ jobs:
       - run: uv run tests/create_demo.py
       - run: node report/browser-check.mjs runs/demo/benchmark/report.html
       - run: node report/stills-check.mjs runs/demo/benchmark/report.html
+      - run: uv run tests/create_fixed_demo.py
+      - run: node report/fixed-check.mjs
+      - run: node report/stills-check.mjs runs/fixed-demo/benchmark/report.html
       - run: uv build
       - name: Smoke-test the installed wheel
         shell: pwsh
@@ -58,3 +61,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed' }
           uv tool run --isolated --from $wheel.FullName archivebench doctor
           if ($LASTEXITCODE -ne 0) { throw 'Installed doctor failed' }
+          uv tool run --isolated --from $wheel.FullName archivebench-tui --help
+          if ($LASTEXITCODE -ne 0) { throw 'Installed TUI entry point failed' }

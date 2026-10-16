@@ -1,8 +1,16 @@
 # Releases
 
-## Current development
+## 0.2.0
 
-The TUI, revised Windows Send to workflow and quick fixed comparisons are documented in the [unreleased development summary](release-notes.md). That summary describes the current checkout, including local work, rather than the historical download below.
+Released 2026-10-16. [Download v0.2.0](https://github.com/Today20092/ArchiveBench/releases/tag/v0.2.0) or follow [installation](installation.md).
+
+- Use the terminal UI to select clips, choose a preset, review preflight, encode, stop and resume an archive job.
+- Open the same UI from Windows Send to with selected folders or clips.
+- Compare fixed CPU/GPU encoder settings within a time allowance, then export measured starting presets. Target tuning remains optional.
+- Choose MKV, MOV or MP4, audio copy/AAC/removal, and supported timecode policies with compatibility checks.
+- Install the optional agent skill, invoke it explicitly, or use it once through `npx skills use`.
+
+Release assets include a Python wheel, source distribution, synthetic offline-report demo and SHA-256 checksums. FFmpeg is installed separately. Originals remain intact; cleanup requires separate review and authorization. See [full release notes](release-notes.md) for scope and limitations.
 
 ## 0.1.0
 

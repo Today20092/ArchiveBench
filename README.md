@@ -2,16 +2,14 @@
 
 ArchiveBench tests short sections of your footage on your computer. Compare picture quality, file size and encoding time, save an archive preset, then reuse it to make smaller, verified copies of future projects. Originals stay intact.
 
-The workflow below describes the current development checkout. The historical v0.1.0 download does not include the current workflow. See [current changes](docs/release-notes.md) and [published releases](docs/releases.md).
-
 <p align="center">
-  <a href="docs/release-notes.md"><img alt="Status: in development" src="https://img.shields.io/badge/Status-In%20development-C4A7E7?style=for-the-badge&amp;labelColor=493267"></a>
+  <a href="https://github.com/Today20092/ArchiveBench/releases/tag/v0.2.0"><img alt="Version: 0.2.0" src="https://img.shields.io/badge/Version-0.2.0-C4A7E7?style=for-the-badge&amp;labelColor=493267"></a>
   <a href="docs/benchmark.md"><img alt="Reports: offline" src="https://img.shields.io/badge/Reports-Offline-A2FFB0?style=for-the-badge&amp;labelColor=246732"></a>
   <a href="pyproject.toml"><img alt="Python: 3.11 or newer" src="https://img.shields.io/badge/Python-3.11%2B-F4C98B?style=for-the-badge&amp;logo=python&amp;labelColor=75512B"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-F4C98B?style=for-the-badge&amp;labelColor=75512B"></a>
 </p>
 
-[Install](docs/installation.md) · [Find your first preset](#start) · [Use a saved preset](#archive-future-projects) · [Terminal UI](docs/terminal-ui.md) · [Current changes](docs/release-notes.md) · [Support](https://github.com/Today20092/ArchiveBench/issues)
+[Install](docs/installation.md) · [Find your first preset](#start) · [Use a saved preset](#archive-future-projects) · [Terminal UI](docs/terminal-ui.md) · [Release notes](docs/release-notes.md) · [Support](https://github.com/Today20092/ArchiveBench/issues)
 
 ## How it works
 
@@ -51,13 +49,14 @@ Windows is the tested platform. macOS/Linux and their hardware encoders remain e
 Install [uv](https://docs.astral.sh/uv/) and a full FFmpeg build with `libvmaf`. Put `ffmpeg` and `ffprobe` on PATH. uv can provide Python 3.11. Then run:
 
 ```powershell
-git clone https://github.com/Today20092/ArchiveBench.git
-cd ArchiveBench
-uv sync --locked --python 3.11
-uv run archivebench doctor
+uv tool install --python 3.11 https://github.com/Today20092/ArchiveBench/releases/download/v0.2.0/archivebench-0.2.0-py3-none-any.whl
+uv tool update-shell
+archivebench doctor
 ```
 
 `doctor` checks tools and lists encoders. A listed encoder still needs to pass an actual encode on the selected footage format.
+
+If the command is not found after installation, open a new terminal. See [installation](docs/installation.md) for upgrades or a source checkout.
 
 ### 2. Choose short footage sections
 
@@ -66,8 +65,8 @@ Choose examples of the footage you usually archive. Include motion, fine detail 
 ### 3. Set the comparison
 
 ```powershell
-uv run archivebench setup --config local-config.json
-uv run archivebench plan local-config.json
+archivebench setup --config local-config.json
+archivebench plan local-config.json
 ```
 
 Setup saves your choices. Plan shows what will run before encoding starts.
@@ -82,7 +81,7 @@ Setup saves your choices. Plan shows what will run before encoding starts.
 ### 4. Run the benchmark
 
 ```powershell
-uv run archivebench benchmark local-config.json --output runs/first-test
+archivebench benchmark local-config.json --output runs/first-test
 ```
 
 The runner prepares reference material, then tests one setting per encoder on the first scene before testing the second settings. The first encode also checks compatibility. Failures stay visible. The runner does not silently change your requested format.
@@ -97,9 +96,7 @@ Open `runs/first-test/report.html`. No server, internet connection or Node insta
 
 Apply your saved preset through the [terminal UI](#open-the-terminal-ui) or an [archive job](#archive-future-projects). If footage or hardware differs from the preset's tested scope, check a short confirmation sample first. Keep originals until separate review and cleanup.
 
-Want to see a report first? Download the [v0.1.0 synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. It shows the released interface, which may differ from this checkout. Its synthetic measurements cannot select settings for your footage and hardware.
-
-Prefer an installed command? See the [standalone installation](docs/installation.md#install-the-command). Python distributions are available from [GitHub Releases](https://github.com/Today20092/ArchiveBench/releases).
+Want to see a report first? Download the [synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.2.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. Its synthetic measurements demonstrate the report and cannot select settings for your footage and hardware.
 
 ## What is measured
 
@@ -141,17 +138,17 @@ For a benchmark, rerun the same command to reuse completed measurements. Changed
 
 ### Open the terminal UI
 
-Once you have a saved preset, open the terminal UI from the current development checkout:
+Once you have a saved preset, open the terminal UI:
 
 ```powershell
-uv run archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
+archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
 ```
 
 Follow **Clips > Settings > Review > Progress**. Add sources, select clips, choose a saved preset and output folder, then run preflight before Start. You can stop safely and resume the saved job later.
 
 ![ArchiveBench Settings showing example CPU and GPU presets, the selected preset, destination folder and audio policy.](docs/images/tui-settings.png)
 
-The development TUI on 2026-10-16, captured with synthetic clips and illustrative presets. These presets are not recommendations. See the [TUI guide and screenshots](docs/terminal-ui.md#screenshots) for the full walkthrough, audio, container, timecode and resume options.
+The TUI captured on 2026-10-16 with synthetic clips and illustrative presets. These presets are not recommendations. See the [TUI guide and screenshots](docs/terminal-ui.md#screenshots) for the full walkthrough, audio, container, timecode and resume options.
 
 ### Create an archive job
 

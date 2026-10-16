@@ -1,6 +1,6 @@
-# Current development: unreleased
+# ArchiveBench 0.2.0
 
-Repository summary reviewed on 2026-10-15. The current focus is the terminal UI and the Windows Send to entry point. This summary includes the local working tree, not only committed changes. At the start of this documentation pass, HEAD was `fbce8ce`, the merge of preset-based Send to archiving. The TUI and several supporting modules were still untracked, alongside edits to the shared engine, reports, tests and docs. A fresh clone or the historical release will not reproduce those local additions.
+Released 2026-10-16. This release packages the terminal UI, revised Windows Send to workflow, fixed comparisons and archive output controls. Install the [release wheel](https://github.com/Today20092/ArchiveBench/releases/tag/v0.2.0) or use a source checkout at `v0.2.0`. See [installation](installation.md).
 
 ## Terminal UI
 
@@ -10,7 +10,7 @@ The preset table compares codec, CPU/GPU device, quality controls, color format 
 
 The UI runs the shared archive engine in a worker and retains output beside the job in a log. Stop and exit request confirmation and wait for owned encoding work to stop safely. Resume checks completed files and restarts an interrupted file from its beginning. Changing a preset file does not rewrite a saved job's snapshot. Cleanup is outside the TUI.
 
-Recent UI work includes a scrollable preset table, clearer selected-preset and review summaries, and avoiding summary rebuilds on tab navigation. Background duration probes and historical per-preset encode estimates are present in the code. Their local tracking item is still in progress; completed validation is not claimed. Missing timing data stays visible, and estimates exclude audio processing and verification.
+The UI includes a scrollable preset table, selected-preset and review summaries, and fewer layout rebuilds on tab navigation. Background duration probes and historical per-preset encode estimates help plan jobs. Missing timing data stays visible, and estimates exclude audio processing and verification.
 
 See [the TUI guide](terminal-ui.md).
 
@@ -40,19 +40,19 @@ Quick runs write the measurements report before detailed browser review. Deferre
 
 See [quick comparison and refinement](quick-comparison.md), [configuration](configuration.md) and [benchmark evidence](benchmark.md).
 
-## Packaging and verification status
+## Packaging and verification
 
 The package now declares Textual as a runtime dependency and adds `archivebench-tui` and `archivebench-desktop` entry points alongside the CLI, skill installer and Send to installer. uv installs those dependencies; FFmpeg remains separate and Node is only needed for report development.
 
-The working tree includes tests for TUI settings, encode/resume and stop behavior, mixed source selection, output-policy migration, fixed comparisons and Send to installation, plus a fixed-report browser check. The presence of tests is not a claim that the current full suite passes. This documentation pass inspected implementation and documentation and checked documentation consistency; it did not run new benchmarks, encode personal footage, establish editor acceptance or publish a release.
+Release checks cover Python 3.11 tests, Ruff formatting/lint, ty type checking, report math/playback tests, synthetic tuning and fixed-comparison reports, offline browser/native-still checks, and installation of the built wheel. The public CI workflow repeats the source, report and package checks. Synthetic measurements test the workflow and do not recommend settings for camera footage.
 
-Current local distributions still use version 0.1.0. A commit and wheel hash help distinguish installations; for uncommitted builds, retain the working-tree revision details too. Windows is the locally exercised platform; other platforms need their own runtime checks.
+The wheel and source distribution use version 0.2.0. Release assets include SHA-256 checksums and a synthetic report demo. Windows is the exercised platform; other platforms need their own runtime checks. FFmpeg is not bundled.
 
-Documentation checks on 2026-10-15 passed for 88 local links and anchors across the nine revised documents, all four README badge image endpoints, and Git whitespace checks. Badge version, Python and license claims match the package manifest and license. Rendered desktop/mobile documentation layout and interactive Explorer launch were not checked in this pass. The application test suite was not rerun for these documentation-only edits.
+The optional skill supports one-time use through `npx skills use` and project or global installation through `npx skills add`. New installations use explicit invocation in Codex and Claude Code. Existing installed copies retain their old settings until updated. Live invocation in every client and interactive Explorer launch are not certified by the automated tests.
 
-## Earlier agent-guided workflow
+## Agent-guided workflow
 
-These changes are built locally, not published. The historical 0.1.0 release URL does not promise these capabilities. Current local distributions retain version 0.1.0; identify the source commit and wheel hash when comparing installations.
+The release also includes the shared CLI and portable skill workflow:
 
 - Optional portable Agent Skills package and installer, using the shared terminal engine.
 - Bounded initial experiment planning, explicit timing repeats and adaptive multi-quality comparisons with progress/evidence reporting.
@@ -61,7 +61,7 @@ These changes are built locally, not published. The historical 0.1.0 release URL
 - Reusable job snapshots across folders with independent resume state and explicit exceptions.
 - Replacement mappings and visual/editor attestations before separate new-job cleanup.
 
-Follow [installation](installation.md) and the [terminal walkthrough](terminal-workflow.md). No publication, global client setup or automatic cleanup is performed. Existing exported settings and legacy archive manifests retain their documented contracts; they are not retroactively editor-approved.
+Follow [installation](installation.md) and the [terminal walkthrough](terminal-workflow.md). Installation does not configure global agent clients or perform cleanup automatically. Existing exported settings and legacy archive manifests retain their documented contracts; they are not retroactively editor-approved.
 
 Windows is the tested platform. The editor evidence covers only the narrow synthetic DaVinci Resolve Studio 21.1.1.10 HEVC Main10 MOV-to-MKV path described in [editor acceptance](editor-acceptance.md). Other editors, camera metadata, Log/HDR grading, physical display fidelity and subjective audio acceptance remain unverified. Scores and a native viewer opening cannot establish human approval.
 
