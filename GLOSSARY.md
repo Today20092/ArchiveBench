@@ -15,7 +15,10 @@ The tested footage characteristics, hardware, toolchain and sample coverage supp
 A person's accepted or rejected decision for specific, hash-bound footage sections. It is separate from measured quality and does not accept unreviewed sections.
 
 **Replacement acceptance**:
-Separate current visual and editor reopening attestations for verified archive outputs. Automated verification alone does not authorize cleanup.
+A current, identity-bound decision accepting verified archive outputs: either genuine visual and editor reopening attestations, or explicit acceptance of the quality tradeoff without inspection. Automated verification alone does not authorize cleanup.
+
+**Quality-tradeoff acceptance**:
+An explicit person's decision to accept the preset's quality loss without claiming visual inspection, grading or editor reopening. It cannot waive integrity checks or unmet preservation requirements and does not authorize deletion.
 
 ## Language
 

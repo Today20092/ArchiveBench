@@ -247,3 +247,71 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
             assert (source / "a.mkv").exists()
 
     asyncio.run(exercise())
+
+
+def test_tui_postjob_tradeoff_and_separate_deletion(tmp_path):
+    from tests.test_acceptance import completed_job
+
+    source, output = completed_job(tmp_path)
+    job_path = tmp_path / "completed.job.json"
+    save(job_path, json.loads((output / "archive-manifest.json").read_text())["job"])
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "presets", job=job_path)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.query_one("#acceptance-name", Input).value = "User"
+            app.query_one(
+                "#acceptance-note", Input
+            ).value = "Accept quality loss without inspection"
+            app.postjob("accept-tradeoff")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            assert str(source / "clip.mkv") in str(
+                app.query_one("#deletion-preview", Static).content
+            )
+            assert not app.query_one("#delete-originals", Button).disabled
+            assert (source / "clip.mkv").exists()
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert not (source / "clip.mkv").exists()
+
+    asyncio.run(exercise())
+
+
+def test_tui_deletion_preview_expires_on_new_consent_or_destination_change(tmp_path):
+    from archivebench.acceptance import record_acceptance
+    from tests.test_acceptance import completed_job
+
+    source, output = completed_job(tmp_path)
+    job_path = tmp_path / "completed.job.json"
+    save(job_path, json.loads((output / "archive-manifest.json").read_text())["job"])
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept loss")
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "presets", job=job_path)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            record_acceptance(output, "quality-tradeoff", "accept", "User", note="Renew decision")
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            app.query_one("#output", Input).value = str(tmp_path / "other-output")
+            await pilot.pause()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.set_busy(True)
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            app.set_busy(False)
+
+    asyncio.run(exercise())
