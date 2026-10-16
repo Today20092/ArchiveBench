@@ -5,12 +5,34 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Select, SelectionList, Button
+from textual.widgets import Input, Select, SelectionList, Button, Collapsible, DataTable, Static
 
 from archivebench.core import save
 from archivebench.presets import make_preset
 from archivebench.selection import selected_job
 from archivebench.tui import ArchiveApp
+
+
+def test_tui_starters_available_without_saved_presets(tmp_path):
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "empty-library")
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            table = app.query_one("#preset-table", DataTable)
+            assert table.row_count == 4
+            app.query_one("#preset", Select).value = str(app.preset_paths[0])
+            await pilot.pause()
+            assert "Quality priority" in str(app.query_one("#summary", Static).content)
+            assert "untested on your footage" in str(app.query_one("#summary", Static).content)
+            assert app.query_one("#preset-technical", Collapsible).collapsed
+            details = str(app.query_one("#preset-details", Static).content)
+            assert "CRF 20" in details
+            assert "-preset medium" in details
+            assert "Match source" in details
+            assert app.query_one("#audio", Select).value == "copy"
+            assert not (tmp_path / "empty-library").exists()
+
+    asyncio.run(exercise())
 
 
 def preset(library):

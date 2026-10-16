@@ -20,6 +20,38 @@ SETTINGS = {
 }
 
 
+def test_starter_presets_export_without_benchmark(tmp_path, monkeypatch, capsys):
+    from archivebench.presets import starter_paths
+
+    paths = starter_paths()
+    documents = [json.loads(path.read_text()) for path in paths]
+    assert [preset["name"] for preset in documents] == [
+        "Quality priority",
+        "Balanced",
+        "Space priority",
+        "Balanced (AVC alternative)",
+    ]
+    assert [resolve_settings(preset)["quality"] for preset in documents] == [20, 24, 28, 23]
+    for index, (path, preset) in enumerate(zip(paths, documents)):
+        settings = resolve_settings(preset)
+        assert settings["pixel_format"] == "source"
+        assert settings["resolution"] == "original"
+        assert settings["audio_mode"] == "copy"
+        assert preset["scope"]["footage"] == []
+        assert preset["evidence"]["measurement_status"] == "unmeasured-starter"
+        assert preset["evidence"]["estimates"]["basis"] == "unknown"
+        assert preset["evidence"]["visual_status"] == "unreviewed"
+        output = tmp_path / f"export-{index}.json"
+        monkeypatch.setattr(
+            sys, "argv", ["archivebench", "preset", "export", str(path), "--output", str(output)]
+        )
+        main()
+        assert json.loads(output.read_text()) == preset
+    monkeypatch.setattr(sys, "argv", ["archivebench", "preset", "list"])
+    main()
+    assert "Quality priority" in capsys.readouterr().out
+
+
 def test_preset_scope_is_not_current_project_validation():
     preset = make_preset(SETTINGS)
     preset["scope"]["footage"] = [{"pixel_format": "yuv422p10le"}]
@@ -81,6 +113,21 @@ def test_malformed_preset_quality_is_rejected():
     invalid = {**SETTINGS, "quality": True}
     with pytest.raises(ValueError, match="integer"):
         make_preset(invalid)
+
+
+def test_source_matching_preset_rejects_unavailable_source_format():
+    preset = make_preset(SETTINGS)
+    report = inspect_preset(
+        preset,
+        {
+            "supported_encoders": ["libx265"],
+            "supported_pixel_formats": ["yuv420p", "yuv420p10le"],
+            "footage": [{"pix_fmt": "yuv422p10le"}],
+        },
+    )
+    assert report["compatibility"] == "unsupported"
+    assert report["unsupported"] == ["output pixel format unavailable"]
+    assert resolve_settings(preset) == SETTINGS
 
 
 def test_cli_imports_legacy_settings_as_portable_preset(tmp_path, monkeypatch, capsys):

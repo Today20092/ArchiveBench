@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .archive import archive, candidates, safe
-from .core import color_args, inspect_source, probe, run
+from .core import color_args, inspect_source, probe, run, validate_output
 from .encoders import options
 from .formats import output_video, retention, scale_filter
 from .presets import inspect_preset, make_preset, resolve_settings
@@ -285,6 +285,9 @@ def inspect_job(
                         str(Path(scratch) / ("probe." + settings.get("container", "mkv"))),
                     ]
                     run(args, 30)
+                    validate_output(
+                        Path(args[-1]), target, settings["encoder"], target["pix_fmt"], ffprobe
+                    )
                 row["compatibility"] = (
                     "short encode/mux probe passed; full retention verification pending"
                 )

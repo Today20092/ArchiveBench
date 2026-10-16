@@ -12,7 +12,7 @@ from .encoders import discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
-from .presets import inspect_preset, make_preset, resolve_settings
+from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .experiments import experiment_plan
 from .jobs import create_job, run_job
 from .review import inspect_review, launch_review, prepare_review, record_review, saved_reviews
@@ -253,8 +253,8 @@ def main() -> None:
     preset = commands.add_parser(
         "preset", help="Import, inspect or export portable archive presets"
     )
-    preset.add_argument("operation", choices=("import", "inspect", "export"))
-    preset.add_argument("document", type=Path)
+    preset.add_argument("operation", choices=("list", "import", "inspect", "export"))
+    preset.add_argument("document", type=Path, nargs="?")
     preset.add_argument("--output", type=Path)
     preset.add_argument("--name", default="")
     preset.add_argument("--description", default="")
@@ -390,6 +390,21 @@ def main() -> None:
                 write_report(json.loads(args.results.read_text(encoding="utf-8")), directory)
             print(json.dumps(value, indent=2))
         elif args.command == "preset":
+            if args.operation == "list":
+                print(
+                    json.dumps(
+                        [
+                            {"path": str(path), **json.loads(path.read_text(encoding="utf-8"))}
+                            for path in starter_paths()
+                        ],
+                        indent=2,
+                    )
+                )
+                return
+            if args.document is None:
+                raise ValueError(
+                    "Supply a preset document path; use preset list for built-in starters"
+                )
             document = json.loads(args.document.read_text(encoding="utf-8"))
             settings = resolve_settings(document)
             if args.operation == "inspect":
