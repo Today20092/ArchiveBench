@@ -1,5 +1,7 @@
 # Running and interpreting a benchmark
 
+New setup defaults to [quick fixed-setting comparisons](quick-comparison.md). Select encoders independently from the time allowance. The report presents measured starting presets; VMAF is observed rather than searched. `--strategy tune` explicitly enables the advanced tuning workflow below.
+
 [Back to the README](../README.md) · [Configuration](configuration.md) · [Archiving](archiving.md)
 
 ## Choose samples

@@ -146,7 +146,10 @@ def test_validated_finalists_get_fractional_rate_paired_previews(tmp_path: Path)
     assert media["encoded"]["frames"] == 60
     assert digest(tmp_path / media["exact"]["path"]) == digest(exact)
     original_modified = (tmp_path / media["original"]["path"]).stat().st_mtime_ns
+    trials: list[dict[str, Any]] = result.get("trials", [])
+    trials.append({**trials[0], "id": "trial-2", "review_media": None})
     generate_review_media(result, tmp_path, lambda: 60)
+    assert trials[1]["review_media"]["original"] == media["original"]
     assert (tmp_path / media["original"]["path"]).stat().st_mtime_ns == original_modified
     (tmp_path / media["original"]["path"]).write_bytes(b"tampered")
     generate_review_media(result, tmp_path, lambda: 60)

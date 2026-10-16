@@ -29,6 +29,8 @@ node report/browser-check.mjs
 node report/stills-check.mjs runs/demo/benchmark/report.html
 ```
 
+For the default fixed-comparison flow, generate `uv run tests/create_fixed_demo.py`, then run `node report/fixed-check.mjs` and `node report/stills-check.mjs runs/fixed-demo/benchmark/report.html`. These checks cover measured starting-preset export, offline charts, native stills and narrow/wide layouts. Preserve prior demo outputs when code identities change and use a fresh output folder.
+
 The demo writes under ignored `runs/`. If an existing demo run rejects a changed runner fingerprint, preserve that run and use its saved config with a fresh output folder:
 
 ```powershell

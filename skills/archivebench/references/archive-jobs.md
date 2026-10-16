@@ -1,5 +1,9 @@
 # Run a reusable archive
 
+For human-driven archival, launch `archivebench-tui` with optional folder/file arguments and `--preset-directory`. Use `--job JOB.json` to review and resume the exact saved job. Review preflight before Start. Stop waits for owned FFmpeg cleanup or the current verification/preflight operation; completed records remain and interrupted clips restart. Keep the terminal open until stopped. Use the noninteractive CLI below for agent automation. Cleanup remains separate. Do not infer Explorer compatibility from a direct-terminal test.
+
+For interactive Windows selection, use `archivebench-desktop --root PROJECT`. It selects an Original Footage subtree by default, proposes Archived Footage, and exposes explicit MOV/MP4/MKV, audio, data and timecode policies. Review the selected file list and chroma statement. The GUI saves an immutable shared job; preflight and a typed ARCHIVE confirmation precede full encoding. Use the CLI for automation. Desktop jobs display encode progress and continue individual encode/verification failures while preserving originals; identity conflicts and storage problems stop the batch. Legacy Proxy Watcher jobs remain with their old runner.
+
 Use the shared reusable job commands. A job snapshots its preset and keeps paths, exceptions and resume state separate from historical preset evidence:
 
 ```powershell

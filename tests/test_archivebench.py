@@ -17,7 +17,7 @@ def test_encoder_controls_and_discovery():
     )
     assert supported == ["hevc_nvenc", "libx265"]
     assert other == ["av1_unknown"]
-    assert "lp=3" in options("libsvtav1", 35, "yuv420p10le")
+    assert "lp=3" not in options("libsvtav1", 35, "yuv420p10le")
     with pytest.raises(ValueError):
         options("libsvtav1", 100, "yuv420p10le")
 

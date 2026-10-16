@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {project,smallest,durationText,pareto,archiveSettings,archivePreset,configurations,eligible,tradeoff,recommendations} from './math.js';
+test('fixed comparison exports starting presets without invented validation',()=>{
+ const result=collection(); result.config.strategy='fixed';
+ const row=configurations(result,1)[0];
+ assert.equal(row.evidence_status,'measured starting point');
+ const settings=archiveSettings(result,row);
+ assert.equal(settings.validated,false);
+ assert.equal(settings.evidence_status,'measured starting point');
+ assert.deepEqual(recommendations([row],0),[]);
+});
 test('portable preset exports historical scope without private paths or new validation',()=>{
  const result=collection();result.environment={cpu:'test CPU',private_path:'C:/private'};result.trials[0].preset_encoder_options=['-c:v','libx265','-preset','medium','-crf','24','-pix_fmt','yuv420p'];
  result.samples[0].video={width:1920,height:1080,pix_fmt:'yuv420p',fps:'30/1',path:'C:/private/clip.mov'};

@@ -25,7 +25,7 @@ const qualityLabel = row => `${row.encoder.endsWith('_nvenc') ? 'CQ' : row.encod
 const qualityName = row => qualityLabel(row).replace(/^CRF /, 'constant rate factor ').replace(/^CQ /, 'constant quality ').replace(/^QP /, 'quantizer ').replace(/^ICQ /, 'intelligent constant quality ').replace(/^q:v /, 'quality setting ');
 const variant = row => result.config.variants?.find(variant => variant.id === row.variant);
 const label = row => `${codec(row.encoder)} · ${qualityLabel(row)}${result.config.variants?.length > 1 ? ` · ${variant(row)?.label ?? row.variant}` : ''}`;
-const evidenceText = row => ({validated:'Passed fresh-footage checks', provisional:'Not yet checked on fresh footage', failed:'Failed saved quality checks', incomplete:'Required checks are incomplete'}[row.evidence_status]);
+const evidenceText = row => ({'measured starting point':'Measured starting point · visual review required', validated:'Passed fresh-footage checks', provisional:'Not yet checked on fresh footage', failed:'Failed saved quality checks', incomplete:'Required checks are incomplete'}[row.evidence_status]);
 const encoderNames = [...new Set(result.trials.map(row => row.encoder))];
 const hiddenEncoders = new Set(), reviewed = new Set(), hosts = {}, mediaURLs = {};
 let selectedId = null, pinnedId = null, inspectedTrialId = null;
@@ -33,7 +33,9 @@ let showStill = () => false;
 
 $('status').textContent = result.status.replaceAll('_', ' ');
 $('target').value = result.config.target_vmaf ?? Math.max(...qualityTargets(result));
+if (result.config.strategy === 'fixed') $('target').value = 0;
 for (const sample of result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning')) $('sample').add(new Option(sample.label, sample.id));
+if (result.config.strategy === 'fixed' && result.samples.some(s => s.id === 'sample-1')) $('sample').value = 'sample-1';
 const sampledSeconds = result.samples.reduce((sum, sample) => sum + sample.seconds, 0);
 const sourceDurations = new Map(result.samples.filter(sample => Number.isFinite(sample.source_seconds)).map(sample => [sample.source_id ?? sample.id, sample.source_seconds]));
 const sourceMinutes = sourceDurations.size ? [...sourceDurations.values()].reduce((sum, seconds) => sum + seconds, 0) / 60 : 60;
@@ -52,6 +54,10 @@ const savedRows = qualityTargets(result).flatMap(target => recommendations(confi
 const savedSmallest = [...savedRows].sort((a,b) => a.gib-b.gib)[0];
 $('outcome').textContent = savedSmallest ? 'Validated settings are available. Compare size and time, then review the footage before exporting settings.' : 'No validated project recommendation yet. Explore the measurements; fresh-footage validation is absent, failed or incomplete.';
 $('saved-conclusion').textContent = `Saved quality targets: ${qualityTargets(result).join(', ')}. ` + (savedSmallest ? 'Validated choices are available at one or more targets; compare each level below. Visual review remains separate.' : 'Provisional tuning evidence. No validated project recommendation, because fresh-footage validation is absent, failed or incomplete. Per-sample results remain available for exploration.');
+if (result.config.strategy === 'fixed') {
+  $('outcome').textContent = 'Fixed-setting comparison. Compare measured quality, storage and speed, review the footage, then export a reusable starting preset.';
+  $('saved-conclusion').textContent = 'Quality scores are observations; no VMAF target was searched. Starting presets are not fresh-footage validation or visual acceptance. Additional-scene coverage is explicit; select the first scene for a like-for-like comparison of all measured settings.';
+}
 
 function optional(id, minimum, maximum = Infinity) {
   const value = $(id).value.trim();
@@ -195,6 +201,7 @@ function render() {
     if (button.dataset.qualityChoice) selectedId = button.dataset.qualityChoice;
     render();
   });
+  if (result.config.strategy === 'fixed') $('quality-levels').innerHTML = '<h2>Measured starting settings</h2><p>Compare the actual quality, video size and encoding time below. No target search was run. Export a preset after reviewing the footage; additional testing can refine it later.</p>';
   if (!baseline) pinnedId = null;
   $('custom-duration').hidden = $('duration').value !== 'custom';
   $('duration-note').textContent = `Estimates for ${footageLength(minutes)} of footage. Only ${footageLength(sampledSeconds / 60)} was measured. Changing this length does not run a benchmark.`;
@@ -204,6 +211,10 @@ function render() {
   drawChart('quality-chart', state, 'gib', 'vmaf', 'Projected video size (GiB)', $('sample').value ? 'Mean VMAF' : 'Weakest sample mean VMAF');
   const card = (row, title) => `<button class="recommendation-choice" style="--codec-color:${codecColor(row.encoder)}" data-id="${escape(row.id)}" aria-pressed="${row.id === selectedId}"><span class="recommendation-label">${title}</span><strong>${escape(codec(row.encoder))}</strong><span>${escape(qualityName(row))}${result.config.variants?.length > 1 ? ` · ${escape(variant(row)?.label ?? row.variant)}` : ''}</span><span class="recommendation-values">${number(row.gib)} GiB · ${durationText(row.minutes)} encoding · quality ${number(row.vmaf)}</span></button>`;
   $('recommendation').innerHTML = smallest ? `<h2>Start with what matters to you</h2><p class="note">These settings passed quality checks on every required section, including fresh footage. Size and time are estimates. Review the footage before archiving.</p><div class="recommendation-grid">${card(smallest, 'Smallest file')}${card(fastest, 'Fastest encode')}${card(highest, 'Highest measured quality')}</div><p class="note">Among ${state.recommended.length} settings that pass the active checks. One setting may win more than one category.</p>` : '<h2>No fully checked choice in this view</h2><p class="note">No validated project recommendation. You can still explore the charts. Missing, failed or incomplete fresh-footage checks need resolving before these settings can be recommended.</p>';
+  if (result.config.strategy === 'fixed') {
+    const starting = choices(state.qualifying);
+    $('recommendation').innerHTML = '<h2>Starting points to review</h2><p>Measured on the selected scene coverage. These choices have not passed fresh validation or human visual acceptance.</p>' + (starting.smallest ? `<div class="recommendation-grid">${card(starting.smallest, 'Smallest measured file')}${card(starting.fastest, 'Fastest measured encode')}${card(starting.highest, 'Highest measured quality')}</div>` : '<p>No equally covered settings match the active filters. Select a measured scene or review unfinished work below.</p>');
+  }
   $('selection').hidden = !selected;
   $('evidence').hidden = !selected;
   $('handoff').hidden = !selected;
@@ -380,7 +391,7 @@ document.querySelector('.plots').addEventListener('click', event => {
 $('color-mode').addEventListener('change', () => {hiddenEncoders.clear(); render();});
 for (const id of ['sample','minutes','target','low-target','max-time','sort-by']) $(id).addEventListener('input', () => {if (id === 'minutes') $('duration').value = 'custom'; if (id === 'sample' && $('sample').value) $('review-sample').value = $('sample').value; render();});
 $('duration').addEventListener('change', () => {if ($('duration').value === 'source') $('minutes').value = sourceMinutes; else if ($('duration').value !== 'custom') $('minutes').value = $('duration').value; else $('minutes').value = Number(Number($('minutes').value).toFixed(3)); render();});
-$('reset').addEventListener('click', () => {$('target').value = result.config.target_vmaf ?? Math.max(...qualityTargets(result)); $('low-target').value = ''; $('max-time').value = ''; $('sample').value = ''; $('minutes').value = sourceMinutes; $('duration').value = 'source'; hiddenEncoders.clear(); render();});
+$('reset').addEventListener('click', () => {$('target').value = result.config.strategy === 'fixed' ? 0 : result.config.target_vmaf ?? Math.max(...qualityTargets(result)); $('low-target').value = ''; $('max-time').value = ''; $('sample').value = ''; $('minutes').value = sourceMinutes; $('duration').value = 'source'; hiddenEncoders.clear(); render();});
 document.querySelector('.quality-starts').addEventListener('click', event => {const button = event.target.closest('[data-target]'); if (button) {$('target').value = button.dataset.target; render();}});
 $('divider').addEventListener('input', () => {$('wipe-original').style.clipPath = `inset(0 ${100-Number($('divider').value)}% 0 0)`;});
 $('theme').addEventListener('click', () => {document.documentElement.classList.toggle('light'); render();});

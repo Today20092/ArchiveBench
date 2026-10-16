@@ -6,7 +6,9 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "textual>=6.6,<7",
+]
 
 [project.urls]
 Source = "https://github.com/Today20092/ArchiveBench"
@@ -17,6 +19,8 @@ Documentation = "https://github.com/Today20092/ArchiveBench#readme"
 archivebench = "archivebench.cli:main"
 archivebench-skill = "archivebench.skill:main"
 archivebench-send-to = "archivebench.send_to:main"
+archivebench-desktop = "archivebench.desktop:main"
+archivebench-tui = "archivebench.tui:main"
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]

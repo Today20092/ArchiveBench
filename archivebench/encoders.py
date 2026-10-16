@@ -6,7 +6,7 @@ import re
 SPECS = {
     "libx264": ("h264", 23, 12, 40, ["-preset", "medium", "-crf"]),
     "libx265": ("hevc", 24, 12, 40, ["-preset", "medium", "-crf"]),
-    "libsvtav1": ("av1", 35, 16, 55, ["-preset", "6", "-svtav1-params", "lp=3", "-crf"]),
+    "libsvtav1": ("av1", 35, 16, 55, ["-preset", "6", "-crf"]),
     "libaom-av1": ("av1", 35, 16, 55, ["-cpu-used", "6", "-b:v", "0", "-crf"]),
     "librav1e": ("av1", 100, 40, 180, ["-speed", "8", "-qp"]),
     "libvpx-vp9": ("vp9", 32, 12, 55, ["-deadline", "good", "-cpu-used", "4", "-b:v", "0", "-crf"]),

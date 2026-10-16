@@ -15,11 +15,11 @@ from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings
 from .experiments import experiment_plan
 from .jobs import create_job, run_job
-from .review import inspect_review, launch_review, record_review, saved_reviews
+from .review import inspect_review, launch_review, prepare_review, record_review, saved_reviews
 from .acceptance import inspect_acceptance, record_acceptance
 
 
-def wizard(config_path: Path, comparison: str = "initial") -> None:
+def wizard(config_path: Path, comparison: str = "initial", strategy: str = "tune") -> None:
     root = Path(input("Source clip or folder: ").strip().strip('"')).resolve()
     files = candidates(root) if root.is_dir() else [root]
     if not files:
@@ -28,41 +28,52 @@ def wizard(config_path: Path, comparison: str = "initial") -> None:
         print(f"{i + 1}: {path.name}")
     selection = input("Choose clip numbers (comma-separated, e.g. 1,3,5): ")
     picked = [files[int(number.strip()) - 1] for number in selection.split(",")]
-    if comparison == "initial" and len(picked) > 2:
+    if strategy == "tune" and comparison == "initial" and len(picked) > 2:
         raise ValueError(
             "Initial comparison accepts at most two clips; use setup --comparison comprehensive for wider coverage"
         )
     profile = input("Profile compact/editing [compact]: ").strip() or "compact"
-    mode = input("Mode quick/thorough [quick]: ").strip() or "quick"
+    mode = (
+        (input("Mode quick/thorough [quick]: ").strip() or "quick")
+        if strategy == "tune"
+        else "quick"
+    )
     encoders = [
         value.strip()
         for value in (
-            input(
-                "Encoders, comma-separated [libx265,libsvtav1,hevc_nvenc; all for comprehensive]: "
-            ).strip()
+            input("Encoders, comma-separated [libx265,libsvtav1,hevc_nvenc; or all]: ").strip()
             or "libx265,libsvtav1,hevc_nvenc"
         ).split(",")
     ]
     if encoders == ["all"]:
-        if comparison != "comprehensive":
+        if strategy == "fixed":
+            encoders, _ = discover(run(["ffmpeg", "-encoders"]))
+        elif comparison != "comprehensive":
             raise ValueError("All encoders requires setup --comparison comprehensive")
-        encoders = []
+        else:
+            encoders = []
     encode_repeats = int(
         input(
             "Measured encodes per setting [1; use 2, 3 or more only to repeat timing measurements]: "
         ).strip()
         or "1"
     )
-    targets = quality_targets(
-        {
-            "target_vmafs": [
-                float(value.strip())
-                for value in (
-                    input("VMAF targets, comma-separated [80,90,95,97; or one target]: ").strip()
-                    or "80,90,95,97"
-                ).split(",")
-            ]
-        }
+    targets = (
+        quality_targets(
+            {
+                "target_vmafs": [
+                    float(value.strip())
+                    for value in (
+                        input(
+                            "VMAF targets, comma-separated [80,90,95,97; or one target]: "
+                        ).strip()
+                        or "80,90,95,97"
+                    ).split(",")
+                ]
+            }
+        )
+        if strategy == "tune"
+        else [95]
     )
     for index, variant in enumerate(VARIANT_PRESETS, 1):
         print(f"{index}: {variant['label']} ({variant['pixel_format']}, {variant['resolution']})")
@@ -100,12 +111,14 @@ def wizard(config_path: Path, comparison: str = "initial") -> None:
     subtitles = input("Subtitles copy/drop [copy]: ").strip() or "copy"
     attachments = input("Attachments copy/drop [copy]: ").strip() or "copy"
     metadata = input("Metadata and chapters copy/drop [copy]: ").strip() or "copy"
-    budget = float(input("Time budget in minutes [15]: ") or "15")
+    budget = float(input("Total time budget in minutes [30]: ") or "30")
     samples = []
     for path in picked:
         duration = float(probe(path)["format"]["duration"])
         start = float(input(f"{path.name}: sample start in seconds [0]: ") or "0")
-        seconds = min(6 if mode == "quick" else 20, max(0, duration - start))
+        seconds = min(
+            5 if strategy == "fixed" else 6 if mode == "quick" else 20, max(0, duration - start)
+        )
         print(
             f"Sample: {start:.1f}s to {start + seconds:.1f}s; choose different scenes for motion, detail and noise."
         )
@@ -132,6 +145,22 @@ def wizard(config_path: Path, comparison: str = "initial") -> None:
         "samples": samples,
         "encoders": encoders,
     }
+    if strategy == "fixed":
+        from .experiments import fixed_settings
+
+        config["strategy"] = "fixed"
+        config["fixed_settings"] = fixed_settings(config)
+        config.pop("target_vmafs")
+        config.pop("target_vmaf")
+        validate_config(config)
+        if config_path.exists():
+            raise ValueError("Config already exists; choose a new path")
+        save(config_path, config)
+        print(json.dumps(experiment_plan(config), indent=2))
+        print(
+            f"Saved {config_path}. Fixed settings, no VMAF search. Review the settings and run archivebench benchmark CONFIG --output RUN. Presets are measured starting points; visual review remains separate."
+        )
+        return
     if config_path.exists():
         raise ValueError("Config already exists; choose a new path")
     validate_config(config)
@@ -186,6 +215,12 @@ def main() -> None:
     )
     setup.add_argument("--config", type=Path, default=Path("local-config.json"))
     setup.add_argument("--comparison", choices=("initial", "comprehensive"), default="initial")
+    setup.add_argument(
+        "--strategy",
+        choices=("fixed", "tune"),
+        default="fixed",
+        help="Fixed settings by default; tune opts into VMAF target searches",
+    )
     commands.add_parser("doctor", help="List installed encoders and quality scoring support")
     scan = commands.add_parser(
         "scan", help="List eligible clips; proxies/generated archives excluded"
@@ -239,7 +274,10 @@ def main() -> None:
     review = commands.add_parser(
         "review", help="Launch exact native comparison or save user visual decisions"
     )
-    review.add_argument("operation", choices=("inspect", "launch", "record"))
+    review.add_argument("operation", choices=("inspect", "launch", "record", "prepare"))
+    review.add_argument(
+        "--seconds", type=float, default=120, help="Selected review preparation allowance"
+    )
     review.add_argument("--results", type=Path, required=True)
     review.add_argument("--trial")
     review.add_argument("--viewer", default="video-compare")
@@ -337,6 +375,8 @@ def main() -> None:
                 raise ValueError("Choose --trial from results.json")
             elif args.operation == "launch":
                 value = launch_review(directory, args.trial, args.viewer, args.display_bits)
+            elif args.operation == "prepare":
+                value = prepare_review(directory, args.trial, args.seconds)
             else:
                 value = record_review(
                     directory,
@@ -368,7 +408,7 @@ def main() -> None:
                 save(args.output, value)
                 print(args.output)
         elif args.command == "setup":
-            wizard(args.config, args.comparison)
+            wizard(args.config, args.comparison, args.strategy)
         elif args.command == "doctor":
             supported, other = discover(run(["ffmpeg", "-encoders"]))
             print(
@@ -398,7 +438,11 @@ def main() -> None:
                     }
                 )
             )
-            print(write_report(result, args.output))
+            print(
+                args.output / "report.html"
+                if result["config"].get("strategy") == "fixed"
+                else write_report(result, args.output)
+            )
         elif args.command == "report":
             print(
                 write_report(

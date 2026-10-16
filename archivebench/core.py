@@ -18,11 +18,19 @@ from .encoders import SPECS, discover, options
 from .formats import format_variants, output_video, scale_filter, validate_formats
 from .validation import quality_targets, shortlist, validation_sections
 from .experiments import experiment_plan
+from .budget import timeout as bounded_timeout, deadline as wall_deadline
+from .budget import capture
 
 
 def digest(path: Path) -> str:
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        if wall_deadline.get() is None:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+        value = hashlib.sha256()
+        while block := stream.read(1024 * 1024):
+            bounded_timeout()
+            value.update(block)
+        return value.hexdigest()
 
 
 def fingerprint(value: Any) -> str:
@@ -37,14 +45,7 @@ def save(path: Path, value: Any) -> None:
 
 
 def run(args: list[str], timeout: float = 120) -> str:
-    process = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=max(0.1, timeout),
-    )
+    process = capture(args, timeout)
     if process.returncode:
         raise RuntimeError(process.stderr[-3000:] or f"Command failed: {args[0]}")
     return process.stdout
@@ -231,6 +232,7 @@ def score(
     subsample: int,
     timeout: float,
     ffprobe: str = "ffprobe",
+    threads: int | None = None,
 ) -> dict[str, Any]:
     fps = Fraction(video["fps"])
     pts = f"settb=AVTB,setpts=N*{fps.denominator}/({fps.numerator}*TB),format={pixel_format}"
@@ -242,9 +244,9 @@ def score(
     metric_filter = (
         f"[0:v]{distorted},split=2[d][ds];[1:v]{pts},split=2[r][rs];"
         f"[d][r]libvmaf=model=version={model}:log_fmt=json:log_path=vmaf.json:"
-        f"n_threads=4:n_subsample={subsample}[v];[ds][rs]ssim[s]"
+        f"n_threads={threads or os.cpu_count() or 1}:n_subsample={subsample}[v];[ds][rs]ssim[s]"
     )
-    process = subprocess.run(
+    process = capture(
         [
             ffmpeg,
             "-v",
@@ -265,12 +267,8 @@ def score(
             "null",
             os.devnull,
         ],
+        requested=timeout,
         cwd=directory,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=max(0.1, timeout),
     )
     (directory / "scoring.log").write_text(process.stderr, encoding="utf-8")
     if process.returncode:
@@ -342,6 +340,10 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Config requires version 1 and mode quick/thorough")
     if config.get("profile") not in ("compact", "editing"):
         raise ValueError("Choose compact or editing profile")
+    if config.get("strategy") == "fixed" and config.get("validation_samples"):
+        raise ValueError(
+            "Fixed comparisons use additional samples for exploration; use strategy tune for fresh target validation"
+        )
     repeats = config.get("encode_repeats", 1)
     if type(repeats) is not int or repeats < 1:
         raise ValueError("encode_repeats must be a positive integer")
@@ -390,6 +392,10 @@ def validate_config(config: dict[str, Any]) -> None:
 
 def benchmark(config_path: Path, output: Path) -> dict[str, Any]:
     config = json.loads(config_path.read_text(encoding="utf-8"))
+    if config.get("strategy") == "fixed":
+        from .fixed import benchmark_fixed
+
+        return benchmark_fixed(config, output)
     validate_config(config)
     output = output.resolve()
     sources = config["samples"] + config.get("validation_samples", [])

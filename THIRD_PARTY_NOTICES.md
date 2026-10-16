@@ -1,5 +1,7 @@
 # Third-party notices
 
+The terminal UI uses Textual (MIT), with Python dependencies resolved in `uv.lock`. Textual's license is provided in its installed distribution: https://github.com/Textualize/textual/blob/main/LICENSE. Dependency license files must accompany redistributed packages.
+
 The offline report bundles `@tanstack/charts` 1.1.0 and its JavaScript dependencies. Their retained license comments are included in `archivebench/assets/report.js`. Dependency versions and integrity hashes are recorded in `package-lock.json`; inspect each package's license when redistributing modified bundles.
 
 TanStack Charts: Copyright TanStack contributors, MIT license. See https://github.com/TanStack/charts/blob/main/LICENSE.
