@@ -2,7 +2,7 @@
 
 The interactive archive workflow is `archivebench-tui`, a Textual application using the same preset and job engine as the CLI. It is included in v0.2.0. See [installation](installation.md) and [release notes](release-notes.md).
 
-Run `uv run archivebench-tui` from the checkout, or `archivebench-tui` after installing the current package. Windows [Send to](windows-send-to.md) passes selected folders and clips into this same interface. Choose the archive destination inside the UI. It archives using existing presets; use [quick comparison](quick-comparison.md) to create starting presets first.
+Run `uv run archivebench-tui` from the checkout, or `archivebench-tui` after installing the current package. Windows [Send to](windows-send-to.md) passes selected folders and clips into this same interface. Choose the archive destination inside the UI. Choose a built-in unmeasured starter immediately, or use [quick comparison](quick-comparison.md) to create measured starting presets.
 
 ## Settings and navigation
 
@@ -16,7 +16,7 @@ On Windows, the Send to installer defaults to the standard console host, even wh
 
 Regular terminal commands keep your existing window size. Advanced options explain container, timecode and other data policies separately.
 
-The interface has four steps: **Clips → Settings → Review → Progress**. Use the tabs or Back/Next. Settings shows a concise preset summary and destination; container, timecode and data policies are under Advanced. Review separates the selected clip count, source, destination and audio policy. Preflight must succeed before Start becomes available.
+The interface has **Clips → Settings → Review → Progress**, followed by **Accept / cleanup** after processing ends. Use the tabs or Back/Next. Settings shows a concise preset summary and destination; container, timecode and data policies are under Advanced. Review separates the selected clip count, source, destination and audio policy. Preflight must succeed before Start becomes available.
 
 Summaries update when selections or settings change; navigating between tabs does not rebuild them.
 

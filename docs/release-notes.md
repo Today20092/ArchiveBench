@@ -28,7 +28,7 @@ The shared selection code supports mixed folders/files, selected-file job snapsh
 
 Jobs now support explicit MKV, MOV and MP4 output policies, audio copy/AAC/removal, selected dropped audio tracks, and timecode/data handling. Supported timecode preservation requires MOV or MP4. Compatibility checks reject unsupported combinations; a successful mux probe does not establish editor compatibility or preservation of proprietary metadata.
 
-Selected jobs enable progress and continuation after individual file failures. Low disk space and identity conflicts still stop the batch. Source/output hashes, decode checks, retained-stream checks and actual savings remain part of verification. Encoding preserves originals; cleanup requires separate visual/editor acceptance and confirmation. Existing Proxy Watcher manifests are not imported. See [archive jobs](archiving.md), [the legacy desktop guide](archive-desktop.md) and [the Proxy Watcher comparison](proxy-watcher-comparison.md).
+Selected jobs enable progress and continuation after individual file failures. Low disk space and identity conflicts still stop the batch. Source/output hashes, decode checks, retained-stream checks and actual savings remain part of verification. Encoding preserves originals; cleanup requires current identity-bound replacement acceptance (actual visual/editor review or explicit quality tradeoff without inspection) and separate approval of the exact deletion preview after processing ends. Existing Proxy Watcher manifests are not imported. See [archive jobs](archiving.md), [the legacy desktop guide](archive-desktop.md) and [the Proxy Watcher comparison](proxy-watcher-comparison.md).
 
 ## Quick comparisons and reports
 

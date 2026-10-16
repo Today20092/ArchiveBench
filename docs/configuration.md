@@ -97,7 +97,7 @@ New benchmarks save `vmaf_frames` with scored-frame timestamps relative to sampl
 
 Existing version 1 archive settings/manifests retain their previous AAC/drop-tracks-3/4 behavior for restart and cleanup. New report exports default to copying all audio and retained streams, even when rebuilding a report from an older benchmark. The report displays this policy before export.
 
-The runner writes MKV. Unsupported data streams and cover art stop a new archive job. Copied audio/subtitle payloads and attachment contents are verified, alongside stream selection, dispositions, metadata, chapters, video, hashes, savings and full audio/video decode. Application-specific metadata and editor compatibility still need a separate test. Originals remain intact until a separate, explicit cleanup.
+The legacy runner writes MKV; reusable jobs support explicit MKV/MOV/MP4 choices. Timecode preserve requires supported MOV/MP4 and verification, reject blocks timecoded inputs, and drop explicitly removes timecode. Unsupported data streams and cover art remain keep-original boundaries unless an explicit supported drop policy is selected. Copied audio/subtitle payloads and attachment contents are verified, alongside stream selection, dispositions, metadata, chapters, video, hashes, savings and full audio/video decode. Application-specific metadata and editor compatibility still need a separate test. Originals remain intact until a separate, explicit cleanup.
 # Weak-moment visual review
 
 ## Portable archive presets
