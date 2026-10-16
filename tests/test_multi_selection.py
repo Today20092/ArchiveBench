@@ -146,7 +146,7 @@ def test_multi_folder_encode_and_resume(tmp_path):
         job_path,
         selected_job(root, output, preset, [p.relative_to(root).as_posix() for p, _ in rows], {}),
     )
-    run_job(job_path, True)
+    run_job(job_path, True, accept_uncertain_suitability=True)
     records = json.loads((output / "archive-manifest.json").read_text())["records"]
     assert len(records) == 2 and all(r["status"] == "verified" for r in records)
     from pathlib import Path

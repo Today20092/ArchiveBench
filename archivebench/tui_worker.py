@@ -14,6 +14,7 @@ def main():
     parser.add_argument("job", type=Path)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--comparison", action="store_true")
+    parser.add_argument("--accept-uncertain-suitability", action="store_true")
     args = parser.parse_args()
     stopped = threading.Event()
 
@@ -35,7 +36,25 @@ def main():
                 flush=True,
             )
         else:
-            run_job(args.job, args.execute, stop_requested=stopped.is_set)
+            plan = run_job(
+                args.job,
+                args.execute,
+                stop_requested=stopped.is_set,
+                accept_uncertain_suitability=args.accept_uncertain_suitability,
+            )
+            import json
+
+            summary = {"suitability": {"status": plan["suitability"]["status"]}, "alternatives": []}
+            for item in plan.get("alternatives", []):
+                gaps = item.get("gaps", []) or next(
+                    (row["gaps"] for row in item.get("files", []) if row["gaps"]), []
+                )
+                summary["alternatives"].append(
+                    {key: item[key] for key in ("path", "preset", "compatibility")}
+                    | {"gaps": [gap[:2000] for gap in gaps[:1]]}
+                )
+            # Keep the UI event bounded independently of batch size; full per-file evidence is logged above.
+            print("ARCHIVEBENCH_PREFLIGHT=" + json.dumps(summary), flush=True)
     except KeyboardInterrupt:
         print(
             "Stopped safely. Completed records remain; interrupted clips restart on resume.",

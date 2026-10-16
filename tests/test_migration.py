@@ -139,7 +139,7 @@ def test_camera_container_selection_resume(
     assert plan["files"][0]["action"] == "encode", plan["files"][0]["gaps"]
     path = tmp_path / "job.json"
     save(path, job)
-    run_job(path, True)
+    run_job(path, True, accept_uncertain_suitability=True)
     manifest = Path(job["output_root"]) / "archive-manifest.json"
     result = json.loads(manifest.read_text())
     assert result["records"][0]["status"] == "verified"
@@ -172,7 +172,7 @@ def test_camera_container_selection_resume(
             return original_popen(args, **kwargs)
 
         monkeypatch.setattr(subprocess, "Popen", fail_one)
-        run_job(failed_path, True)
+        run_job(failed_path, True, accept_uncertain_suitability=True)
         records = json.loads((tmp_path / "continued" / "archive-manifest.json").read_text())[
             "records"
         ]

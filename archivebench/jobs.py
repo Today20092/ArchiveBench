@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from .archive import archive, candidates, safe
-from .core import color_args, inspect_source, probe, run, validate_output
+from .core import color_args, digest, fingerprint, inspect_source, probe, run, save, validate_output
 from .encoders import options
 from .formats import output_video, retention, scale_filter
-from .presets import inspect_preset, make_preset, resolve_settings
+from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .mux import suffix, mux_args, stream_gaps
 
 
@@ -43,6 +43,97 @@ def discover_job(output: Path) -> dict[str, Any] | None:
             "Saved job destination differs; restore its original location or choose another destination"
         )
     return copy.deepcopy(job)
+
+
+def resume_destination(job: dict[str, Any]) -> dict[str, Any]:
+    """Reuse the destination snapshot only when selection and settings agree."""
+    saved = discover_job(Path(job["output_root"]))
+    if saved is None:
+        return job
+
+    def selection(value):
+        source, output = Path(value["source_root"]), Path(value["output_root"])
+        return set(
+            value.get(
+                "selected_files",
+                [
+                    p.relative_to(source).as_posix()
+                    for p in candidates(source)
+                    if not p.is_relative_to(output)
+                ],
+            )
+        )
+
+    deleted = set(completed_deletions(saved))
+    if (
+        saved["source_root"] != job["source_root"]
+        or selection(saved) - deleted != selection(job) - deleted
+    ):
+        raise ValueError(
+            "Destination job selection conflicts; resume the saved selection or choose another destination"
+        )
+    if (
+        resolve_settings(saved["preset"]) != resolve_settings(job["preset"])
+        or saved["exceptions"] != job["exceptions"]
+    ):
+        raise ValueError(
+            "Destination job settings conflict; resume the saved settings or choose another destination"
+        )
+    return saved
+
+
+def completed_deletions(job: dict[str, Any]) -> dict[str, dict]:
+    """Missing originals are complete only when their checkpoint replacements still match."""
+    source, output = safe(Path(job["source_root"])), safe(Path(job["output_root"]))
+    path = safe(output / "archive-manifest.json", output)
+    if not path.exists():
+        return {}
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    records = [
+        record for record in manifest.get("records", []) if record["status"] == "original_deleted"
+    ]
+    if not records:
+        return {}
+    if (
+        manifest.get("version") != 1
+        or manifest.get("source_root") != str(source)
+        or manifest.get("output_root") != str(output)
+        or manifest.get("job") != job
+        or manifest.get("settings") != resolve_settings(job["preset"])
+    ):
+        raise ValueError(
+            "Existing archive belongs to another source/settings; choose another output"
+        )
+    exceptions = {item["path"].casefold(): item for item in job["exceptions"]}
+    missing = {
+        safe(Path(value), source)
+        for value in manifest.get(
+            "selected_sources", [record["source"] for record in manifest["records"]]
+        )
+        if not Path(value).is_file()
+    }
+    if missing - {Path(record["source"]) for record in records}:
+        raise ValueError("Selected file missing or excluded")
+    completed = {}
+    for record in records:
+        original = safe(Path(record["source"]), source)
+        relative = original.relative_to(source).as_posix()
+        exception = exceptions.get(relative.casefold(), {})
+        settings = resolve_settings(exception.get("preset", job["preset"]))
+        replacement = safe(Path(record["output"]), output)
+        if (
+            relative in completed
+            or original.exists()
+            or ("selected_files" in job and relative not in job["selected_files"])
+            or exception.get("action") == "keep-original"
+            or record.get("settings") != settings
+            or replacement != output / (relative + suffix(settings))
+        ):
+            raise ValueError("Deleted-original record mapping/settings do not match saved job")
+        if not replacement.is_file() or digest(replacement) != record["output_hash"]:
+            raise ValueError("Deleted-original replacement changed/missing")
+        completed[relative] = record
+    return completed
 
 
 @contextmanager
@@ -191,7 +282,10 @@ def create_job(
 
 
 def inspect_job(
-    job: dict[str, Any], ffprobe: str = "ffprobe", ffmpeg: str = "ffmpeg"
+    job: dict[str, Any],
+    ffprobe: str = "ffprobe",
+    ffmpeg: str = "ffmpeg",
+    alternatives: list[Path] | None = None,
 ) -> dict[str, Any]:
     validate_job(job)
     source, output = safe(Path(job["source_root"])), safe(Path(job["output_root"]))
@@ -201,10 +295,15 @@ def inspect_job(
         relative_path(item["path"]).casefold(): item for item in job.get("exceptions", [])
     }
     rows, destinations, used = [], set(), set()
+    deleted = completed_deletions(job)
+    used.update(key for key in exceptions if key in {relative.casefold() for relative in deleted})
     available = candidates(source)
     if "selected_files" in job:
         chosen = {relative_path(p).casefold() for p in job["selected_files"]}
-        if not chosen.issubset({p.relative_to(source).as_posix().casefold() for p in available}):
+        if not chosen.issubset(
+            {p.relative_to(source).as_posix().casefold() for p in available}
+            | {relative.casefold() for relative in deleted}
+        ):
             raise ValueError("Selected file missing or excluded")
         available = [p for p in available if p.relative_to(source).as_posix().casefold() in chosen]
     for path in available:
@@ -351,8 +450,9 @@ def inspect_job(
     ancestor = output
     while not ancestor.exists():
         ancestor = ancestor.parent
-    return {
+    result = {
         "files": rows,
+        "completed_deletions": list(deleted.values()),
         "preflight": {
             "maximum_frames_per_file": 1,
             "timeout_seconds_per_probe": 30,
@@ -372,6 +472,91 @@ def inspect_job(
             "scratch_basis": "source-size planning allowance; output size not guaranteed",
         },
     }
+    if alternatives is None:
+        alternatives = starter_paths()
+    if alternatives and any(row["compatibility"] == "unsupported" for row in rows):
+        result["alternative_selection"] = (
+            "Select an alternative explicitly and preflight the new job; current job remains unchanged"
+        )
+        result["alternatives"] = []
+        result["preflight"]["maximum_alternative_probes_per_file"] = len(alternatives)
+        for path in alternatives:
+            candidate = copy.deepcopy(job)
+            candidate["output_root"] = str(
+                output.parent / f".archivebench-alternative-{uuid4().hex}"
+            )
+            candidate["selected_files"] = [row["relative"] for row in rows]
+            candidate["exceptions"] = [
+                item for item in job["exceptions"] if item["path"] not in deleted
+            ]
+            document = json.loads(path.read_text(encoding="utf-8"))
+            candidate["preset"] = document
+            item = {"path": str(path), "preset": document}
+            try:
+                checked = inspect_job(candidate, ffprobe, ffmpeg, alternatives=[])
+                item.update(
+                    compatibility="short probes passed for all selected encodes"
+                    if all(row["compatibility"] != "unsupported" for row in checked["files"])
+                    else "unsupported",
+                    files=checked["files"],
+                    estimates=checked["estimates"],
+                )
+            except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                item.update(compatibility="unsupported", gaps=[str(error)])
+            result["alternatives"].append(item)
+    return result
+
+
+def suitability_decision(job: dict[str, Any], plan: dict[str, Any], accept: bool = False) -> dict:
+    """Consent for this selection and settings; never a visual or cleanup attestation."""
+    output = safe(Path(job["output_root"]))
+    path = safe(output / "suitability-acceptance.json", output)
+    scope = []
+    for row in plan["files"]:
+        if row["output"]:
+            stat = Path(row["source"]).stat()
+            scope.append(
+                {
+                    "source": row["source"],
+                    "size": stat.st_size,
+                    "modified_ns": stat.st_mtime_ns,
+                    "footage": row.get("footage"),
+                    "footage_scope": row.get("footage_scope"),
+                    "settings": row["settings"],
+                }
+            )
+    binding = fingerprint({"job": job, "scope": scope})
+    required = any(row.get("footage_scope") != "matches historical scope" for row in scope)
+    recorded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if not isinstance(recorded, dict):
+        raise ValueError("Invalid suitability acceptance record")
+    if not accept and recorded.get("status") == "accepted-uncertain":
+        previous = recorded.get("scope", [])
+        deleted = {item["source"] for item in plan.get("completed_deletions", [])}
+        if (
+            isinstance(previous, list)
+            and all(
+                isinstance(item, dict) and isinstance(item.get("source"), str) for item in previous
+            )
+            and recorded.get("binding") == fingerprint({"job": job, "scope": previous})
+            and [item for item in previous if item["source"] not in deleted] == scope
+        ):
+            return recorded
+    if accept and required:
+        recorded = {
+            "status": "accepted-uncertain",
+            "binding": binding,
+            "scope": scope,
+            "note": "Explicit suitability acceptance; no visual review or deletion approval",
+        }
+        save(path, recorded)
+    if required:
+        return (
+            recorded
+            if recorded.get("binding") == binding and recorded.get("status") == "accepted-uncertain"
+            else {"status": "acceptance-required", "binding": binding}
+        )
+    return {"status": "historical-scope-matches" if scope else "no-compatible-encodes"}
 
 
 def run_job(
@@ -380,17 +565,23 @@ def run_job(
     ffmpeg: str = "ffmpeg",
     ffprobe: str = "ffprobe",
     stop_requested: Callable[[], bool] | None = None,
+    accept_uncertain_suitability: bool = False,
 ) -> dict[str, Any]:
     job = json.loads(job_path.read_text(encoding="utf-8"))
     print(
-        "Job preflight performs up to one frame per eligible file in temporary scratch (30-second probe limit). This is compatibility checking; full archive encoding requires --execute.",
+        "Job preflight performs up to one frame per eligible file and, on incompatibility, up to four bundled alternative probes per file in temporary scratch (30-second limit per probe). This is compatibility checking; full archive encoding requires --execute.",
         flush=True,
     )
     plan = inspect_job(job, ffprobe, ffmpeg)
     if stop_requested and stop_requested():
         raise KeyboardInterrupt
+    plan["suitability"] = suitability_decision(job, plan, accept_uncertain_suitability)
     print(json.dumps(plan, indent=2))
     if execute:
+        if plan["suitability"]["status"] == "acceptance-required":
+            raise ValueError(
+                "Accept uncertain preset suitability explicitly with --accept-uncertain-suitability after reviewing preflight"
+            )
         archive(
             Path(job["source_root"]),
             Path(job["output_root"]),

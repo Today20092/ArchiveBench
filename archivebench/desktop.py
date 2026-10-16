@@ -272,7 +272,16 @@ def main() -> None:
     form, selection = window(args.root, args.preset_directory, args.cleanup)
     form.mainloop()
     if "job" in selection:
-        run_job(selection["job"])
+        plan = run_job(selection["job"])
+        if plan["suitability"]["status"] == "acceptance-required":
+            if (
+                input(
+                    "Type ACCEPT UNCERTAIN to accept untested preset suitability (no visual or deletion approval): "
+                )
+                != "ACCEPT UNCERTAIN"
+            ):
+                return
+            run_job(selection["job"], accept_uncertain_suitability=True)
         if (
             input("Type ARCHIVE to execute/resume this reviewed job (anything else cancels): ")
             == "ARCHIVE"
