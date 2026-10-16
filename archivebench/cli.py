@@ -14,7 +14,7 @@ from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .experiments import experiment_plan
-from .jobs import create_job, run_job
+from .jobs import create_job, discover_job, resume_destination, run_job
 from .review import inspect_review, launch_review, prepare_review, record_review, saved_reviews
 from .acceptance import inspect_acceptance, record_acceptance
 
@@ -275,6 +275,11 @@ def main() -> None:
         "--exceptions", type=Path, help="JSON list of explicit relative file exceptions"
     )
     job.add_argument("--execute", action="store_true")
+    job.add_argument(
+        "--accept-uncertain-suitability",
+        action="store_true",
+        help="Explicitly accept untested preset suitability for the preflighted job; no visual or deletion approval",
+    )
     review = commands.add_parser(
         "review", help="Launch exact native comparison or save user visual decisions"
     )
@@ -360,11 +365,21 @@ def main() -> None:
                     if args.exceptions
                     else []
                 )
-                value = create_job(args.source, args.output, args.preset, exceptions)
+                value = resume_destination(
+                    create_job(args.source, args.output, args.preset, exceptions)
+                )
+                if discover_job(args.output) is not None:
+                    print(
+                        "Resuming destination's saved job; immutable settings and selection retained"
+                    )
                 save(args.config, value)
                 print(args.config)
             else:
-                run_job(args.config, args.execute if args.operation == "run" else False)
+                run_job(
+                    args.config,
+                    args.execute if args.operation == "run" else False,
+                    accept_uncertain_suitability=args.accept_uncertain_suitability,
+                )
         elif args.command == "review":
             directory = args.results.resolve().parent
             if args.results.name != "results.json":

@@ -14,6 +14,7 @@ def main():
     parser.add_argument("job", type=Path)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--comparison", action="store_true")
+    parser.add_argument("--accept-uncertain-suitability", action="store_true")
     args = parser.parse_args()
     stopped = threading.Event()
 
@@ -35,7 +36,15 @@ def main():
                 flush=True,
             )
         else:
-            run_job(args.job, args.execute, stop_requested=stopped.is_set)
+            plan = run_job(
+                args.job,
+                args.execute,
+                stop_requested=stopped.is_set,
+                accept_uncertain_suitability=args.accept_uncertain_suitability,
+            )
+            import json
+
+            print("ARCHIVEBENCH_PREFLIGHT=" + json.dumps(plan), flush=True)
     except KeyboardInterrupt:
         print(
             "Stopped safely. Completed records remain; interrupted clips restart on resume.",

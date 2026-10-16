@@ -8,6 +8,7 @@ import os
 import sys
 import webbrowser
 from pathlib import Path
+from contextlib import asynccontextmanager, nullcontext
 
 from rich.text import Text
 
@@ -158,6 +159,7 @@ class ArchiveApp(App):
         self.job_hash = ""
         self.deletion_preview = None
         self.reviewed = False
+        self.suitability_required = False
         self.busy = False
         self.process: asyncio.subprocess.Process | None = None
         self.stop_pending = False
@@ -244,6 +246,11 @@ class ArchiveApp(App):
                 )
                 presets = self.preset_paths
                 yield DataTable(id="preset-table", cursor_type="row", zebra_stripes=True)
+                yield Static(
+                    "Alternatives are probed only after a rejected preflight.",
+                    id="alternatives",
+                    markup=False,
+                )
                 if not presets:
                     yield Static(
                         f"No saved presets found in {self.library}", classes="hint", markup=False
@@ -443,6 +450,8 @@ class ArchiveApp(App):
 
     def on_input_changed(self, event: Input.Changed):
         if not self.busy:
+            if event.input.id in ("output", "saved-job"):
+                self.query_one("#scope-accept", Checkbox).value = False
             self.query_one("#comparison-start", Button).disabled = True
             self.invalidate()
 
@@ -504,6 +513,8 @@ class ArchiveApp(App):
         if self.busy:
             return
         self.invalidate()
+        if event.select.id in ("preset", "container", "audio", "timecode", "data", "aac-bitrate"):
+            self.query_one("#scope-accept", Checkbox).value = False
         self.query_one("#comparison-start", Button).disabled = True
         self.query_one("#aac-options").display = self.query_one("#audio", Select).value == "aac"
         if event.select.id == "preset" and isinstance(event.value, str):
@@ -807,55 +818,26 @@ class ArchiveApp(App):
     async def run_comparison(self):
         if self.busy or self.comparison_config is None:
             return
-        self.set_busy(True)
-        self.stop_pending = False
-        self.query_one("#comparison-start", Button).disabled = True
-        self.query_one("#comparison-report", Button).disabled = True
-        self.query_one(TabbedContent).active = "step-progress"
-        try:
-            if (
-                hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
-                != self.comparison_hash
-            ):
-                raise ValueError("Comparison settings changed; review again")
-            self.process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-u",
-                "-m",
-                "archivebench.tui_worker",
-                str(self.comparison_config),
-                "--comparison",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-            )
-            assert self.process.stdout is not None
-            if self.stop_pending:
-                self.request_stop()
-            async for line in self.process.stdout:
-                self.query_one("#log", RichLog).write(
-                    line.decode("utf-8", errors="replace").rstrip()
+        async with self.worker_session():
+            self.query_one("#comparison-start", Button).disabled = True
+            self.query_one("#comparison-report", Button).disabled = True
+            self.query_one(TabbedContent).active = "step-progress"
+            try:
+                if (
+                    hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
+                    != self.comparison_hash
+                ):
+                    raise ValueError("Comparison settings changed; review again")
+                code = await self.worker_output(self.comparison_config, ["--comparison"])
+                report = self.comparison_config.parent / "report.html"
+                self.query_one("#comparison-report", Button).disabled = not report.exists()
+                self.query_one("#status", Static).update(
+                    f"Comparison {'finished' if code == 0 else 'stopped or failed'}. "
+                    "Return to Setup / compare, open the report, inspect missing/failed evidence, export a preset and load it here. "
+                    "Short measurements do not validate all footage."
                 )
-            code = await self.process.wait()
-            report = self.comparison_config.parent / "report.html"
-            self.query_one("#comparison-report", Button).disabled = not report.exists()
-            self.query_one("#status", Static).update(
-                f"Comparison {'finished' if code == 0 else 'stopped or failed'}. "
-                "Return to Setup / compare, open the report, inspect missing/failed evidence, export a preset and load it here. "
-                "Short measurements do not validate all footage."
-            )
-        except (OSError, ValueError) as error:
-            self.error(error)
-        finally:
-            if self.process and self.process.stdin:
-                self.process.stdin.close()
-            if self.process and self.process.returncode is None:
-                await self.process.wait()
-            self.process = None
-            self.set_busy(False)
-            if self.quit_pending:
-                self.exit()
+            except (OSError, ValueError) as error:
+                self.error(error)
 
     @work(exclusive=True, group="prepare")
     async def prepare(self):
@@ -869,10 +851,6 @@ class ArchiveApp(App):
                 job = json.loads(path.read_text(encoding="utf-8"))
                 validate_job(job)
             else:
-                if not self.query_one("#scope-accept", Checkbox).value:
-                    raise ValueError(
-                        "Accept uncertain preset suitability in Settings, or run an optional comparison first"
-                    )
                 preset = self.query_one("#preset", Select).value
                 output = self.query_one("#output", Input).value.strip().strip('"')
                 if self.root is None or not isinstance(preset, str) or not output:
@@ -925,55 +903,46 @@ class ArchiveApp(App):
     async def execute_engine(self, execute: bool):
         if self.busy or self.job_path is None:
             return
-        self.deletion_preview = None
+        async with self.worker_session():
+            self.deletion_preview = None
+            self.query_one(TabbedContent).active = "step-progress"
+            try:
+                if hashlib.sha256(self.job_path.read_bytes()).hexdigest() != self.job_hash:
+                    raise ValueError("Saved job changed; review it again")
+                snapshot = json.loads(self.job_path.read_text(encoding="utf-8"))
+                log_path = Path(snapshot["output_root"]) / "archive-job.json.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                self.query_one("#status", Static).update(
+                    f"{'Encoding / verifying' if execute else 'Preflight'} — log: {log_path}"
+                )
+                args = ["--execute"] if execute else []
+                if self.query_one("#scope-accept", Checkbox).value:
+                    args.append("--accept-uncertain-suitability")
+                    self.query_one("#scope-accept", Checkbox).value = False
+                code = await self.worker_output(self.job_path, args, log_path)
+                self.reviewed = code == 0 and not execute and not self.suitability_required
+                status = (
+                    "Accept uncertain suitability in Settings, then preflight again before starting."
+                    if code == 0 and self.suitability_required
+                    else "Preflight finished. Check the Progress log, then return to Review to start."
+                    if self.reviewed
+                    else "Processing finished. Check failed / kept-original records. Continue to Accept / cleanup for optional review or quality-tradeoff acceptance, then separate deletion approval."
+                    if code == 0
+                    else "Stopped. Review the saved job to resume; completed files are retained."
+                    if code == 130
+                    else "Job failed. See the log; originals are retained."
+                )
+                self.query_one("#status", Static).update(status)
+            except (OSError, ValueError) as error:
+                self.reviewed = False
+                self.error(error)
+
+    @asynccontextmanager
+    async def worker_session(self):
         self.set_busy(True)
-        self.query_one(TabbedContent).active = "step-progress"
         self.stop_pending = False
         try:
-            if hashlib.sha256(self.job_path.read_bytes()).hexdigest() != self.job_hash:
-                raise ValueError("Saved job changed; review it again")
-            snapshot = json.loads(self.job_path.read_text(encoding="utf-8"))
-            log_path = Path(snapshot["output_root"]) / "archive-job.json.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            self.query_one("#status", Static).update(
-                f"{'Encoding / verifying' if execute else 'Preflight'} — log: {log_path}"
-            )
-            self.process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-u",
-                "-m",
-                "archivebench.tui_worker",
-                str(self.job_path),
-                *(["--execute"] if execute else []),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-            )
-            assert self.process.stdout is not None
-            if self.stop_pending:
-                self.request_stop()
-            with log_path.open("a", encoding="utf-8") as log:
-                async for line in self.process.stdout:
-                    text = line.decode("utf-8", errors="replace").rstrip()
-                    log.write(text + "\n")
-                    log.flush()
-                    self.query_one("#log", RichLog).write(text)
-            code = await self.process.wait()
-            self.reviewed = code == 0 and not execute
-            status = (
-                "Preflight finished. Check the Progress log, then return to Review to start."
-                if self.reviewed
-                else "Processing finished. Check failed / kept-original records. Continue to Accept / cleanup for optional review or quality-tradeoff acceptance, then separate deletion approval."
-                if code == 0
-                else "Stopped. Review the saved job to resume; completed files are retained."
-                if code == 130
-                else "Job failed. See the log; originals are retained."
-            )
-            self.query_one("#status", Static).update(status)
-        except (OSError, ValueError) as error:
-            self.reviewed = False
-            self.error(error)
+            yield
         finally:
             if self.process and self.process.stdin:
                 self.process.stdin.close()
@@ -983,6 +952,58 @@ class ArchiveApp(App):
             self.set_busy(False)
             if self.quit_pending:
                 self.exit()
+
+    async def worker_output(self, path: Path, args: list[str], log_path: Path | None = None):
+        self.process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-m",
+            "archivebench.tui_worker",
+            str(path),
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        assert self.process.stdout is not None
+        if self.stop_pending:
+            self.request_stop()
+        with log_path.open("a", encoding="utf-8") if log_path else nullcontext() as log:
+            async for line in self.process.stdout:
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if log:
+                    log.write(text + "\n")
+                    log.flush()
+                if text.startswith("ARCHIVEBENCH_PREFLIGHT="):
+                    plan = json.loads(text.split("=", 1)[1])
+                    self.suitability_required = (
+                        plan["suitability"]["status"] == "acceptance-required"
+                    )
+                    if plan.get("alternatives"):
+                        choices = [
+                            f"{item['preset']['name']}: {item['compatibility']} — {item['path']}\n"
+                            + "Tested settings: "
+                            + json.dumps(item["preset"]["settings"])
+                            + "\n"
+                            + "; ".join(
+                                item.get("gaps", [])
+                                + [
+                                    gap
+                                    for row in item.get("files", [])
+                                    for gap in row.get("gaps", [])
+                                ]
+                            )
+                            for item in plan["alternatives"]
+                        ]
+                        self.query_one("#alternatives", Static).update(
+                            "Probed on this selection (quality remains untested):\n"
+                            + "\n".join(choices)
+                            + "\nChoose a preset above explicitly, match the shown policy settings and preflight again. Current job is unchanged."
+                        )
+                    continue
+                self.query_one("#log", RichLog).write(text)
+        return await self.process.wait()
 
     def request_stop(self):
         self.stop_pending = True

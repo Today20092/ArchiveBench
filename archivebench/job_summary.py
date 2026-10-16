@@ -90,6 +90,9 @@ def write_summary(output_root: Path) -> Path:
         "preset": manifest.get("job", {}).get("preset"),
         "exceptions": manifest.get("job", {}).get("exceptions", []),
         "replacement_acceptance": manifest.get("replacement_acceptance", {}),
+        "suitability_acceptance": manifest.get(
+            "suitability_acceptance", {"status": "not-recorded"}
+        ),
     }
     counts = Counter(record.get("status") for record in records.values())
     html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Archive job summary</title>

@@ -48,6 +48,17 @@ def test_job_preflight_rejects_silent_pixel_format_substitution(tmp_path):
     plan = inspect_job(create_job(source, tmp_path / "output", preset))
     assert plan["files"][0]["compatibility"] == "unsupported"
     assert "bit depth/chroma" in str(plan["files"][0]["gaps"])
+    assert (
+        plan["alternative_selection"]
+        == "Select an alternative explicitly and preflight the new job; current job remains unchanged"
+    )
+    avc = next(
+        item for item in plan["alternatives"] if item["preset"]["settings"]["encoder"] == "libx264"
+    )
+    assert avc["compatibility"] == "short probes passed for all selected encodes"
+    assert avc["files"][0]["footage"]["pix_fmt"] == "yuv422p10le"
+    assert avc["estimates"]["status"] == "unknown"
+    assert plan["files"][0]["action"] == "keep-original"
 
 
 def test_job_snapshot_and_exception_boundaries(tmp_path):
@@ -115,7 +126,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         )
         config = tmp_path / (name + ".json")
         config.write_text(json.dumps(job))
-        plan = run_job(config)
+        plan = run_job(config, accept_uncertain_suitability=True)
         assert plan["files"][0]["settings"]["quality"] == 28
         assert plan["files"][0]["footage_scope"] == "untested"
         assert plan["files"][0]["sample_check"] == "recommended"
@@ -159,7 +170,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         changed_job = {**job, "exceptions": [{"path": "keep.mov", "action": "keep-original"}]}
         config.write_text(json.dumps(changed_job))
         with pytest.raises(ValueError, match="another source/settings"):
-            run_job(config, True)
+            run_job(config, True, accept_uncertain_suitability=True)
         preset.write_text(json.dumps(settings()))
 
 
@@ -174,6 +185,8 @@ def test_preflight_preserves_unsupported_files(tmp_path):
     assert plan["files"][0]["action"] == "keep-original"
     assert plan["files"][0]["compatibility"] == "unsupported"
     assert plan["files"][0]["gaps"]
+    assert all(item["compatibility"] == "unsupported" for item in plan["alternatives"])
+    assert all(item["files"][0]["gaps"] for item in plan["alternatives"])
     assert not (tmp_path / "output").exists()
 
 
@@ -295,7 +308,7 @@ def test_unhelpful_archive_is_recorded_and_original_retained(tmp_path):
     job = create_job(source, tmp_path / "output", preset)
     config = tmp_path / "job.json"
     config.write_text(json.dumps(job))
-    run_job(config, True)
+    run_job(config, True, accept_uncertain_suitability=True)
     record = json.loads((tmp_path / "output/archive-manifest.json").read_text())["records"][0]
     assert record["status"] == "not_worth_encoding"
     assert clip.exists()

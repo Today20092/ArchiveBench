@@ -312,6 +312,12 @@ def archive(
     if not execute:
         print("Add --execute after reviewing this list to encode.")
         return
+    if job is not None:
+        from .jobs import suitability_decision
+
+        suitability = suitability_decision(job, plan or {"files": []})
+        if suitability["status"] == "acceptance-required":
+            raise ValueError("Accept uncertain preset suitability explicitly before encoding")
     output_root.mkdir(parents=True, exist_ok=True)
     manifest_path = output_root / "archive-manifest.json"
     manifest: dict[str, Any] = (
@@ -339,6 +345,8 @@ def archive(
     with lock.open("x") as stream:
         stream.write(str(os.getpid()))
     try:
+        if job is not None:
+            manifest["suitability_acceptance"] = suitability
         manifest["selected_sources"] = list(
             dict.fromkeys([*manifest.get("selected_sources", []), *(str(path) for path in files)])
         )

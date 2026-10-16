@@ -98,7 +98,7 @@ def test_storage_stop_retains_original_and_resumes(tmp_path, monkeypatch, failur
     with monkeypatch.context() as broken:
         broken.setattr(shutil, "disk_usage", unavailable)
         with pytest.raises(OSError, match="Low disk|disconnected"):
-            run_job(config, True)
+            run_job(config, True, accept_uncertain_suitability=True)
     manifest = json.loads((output / "archive-manifest.json").read_text())
     assert manifest["last_run"].startswith("stopped:")
     assert clip.read_bytes() == original

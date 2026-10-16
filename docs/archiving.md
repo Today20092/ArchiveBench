@@ -1,5 +1,11 @@
 # Archive files and review cleanup
 
+Reusable jobs enforce explicit suitability consent outside a preset's historical footage scope. Run `archivebench job inspect JOB.json` first. If it reports `acceptance-required`, explicitly accept that uncertainty with `archivebench job inspect JOB.json --accept-uncertain-suitability`, then use `archivebench job run JOB.json --execute`. The TUI Settings checkbox records the same decision for new and saved jobs. This consent is separate from actual visual/editor review, replacement acceptance and deletion approval.
+
+The consent-only `suitability-acceptance.json` records the immutable job, probed footage characteristics, source sizes and modification times; changes invalidate it. This is a stat/probe binding, not a content-hash attestation. Original/archive integrity and cleanup still require their existing hash checks. The manifest and offline summary record the executed suitability decision. Old saved jobs require an explicit decision when none is recorded.
+
+Rejected preflights probe up to four bundled alternatives on the selected footage (one frame per file, 30 seconds per probe). CLI plans and TUI Settings report passed candidates and failed candidates/reasons. Choose an alternative explicitly, review its exact settings and policies and preflight a new job; the current job is never changed automatically. Quality and size/time remain untested/unknown. CLI `job create` also discovers destination jobs: matching selections/settings resume their saved snapshot, while conflicts explain which choices must be resumed or moved to another destination.
+
 Use [the terminal UI](terminal-ui.md) to select clips, choose a destination and preset, review output policies, and run or resume a job. [Windows Send to](windows-send-to.md) opens the same UI. The [legacy desktop workflow](archive-desktop.md) remains available, including the separate cleanup selector. Existing presets without a container still default to MKV; the text below describes those defaults.
 
 For reusable folder jobs, follow [editor reopening and replacement acceptance](editor-acceptance.md). The job workflow requires an identity-bound replacement decision: actual visual/editor attestations or explicit quality-tradeoff acceptance without inspection, followed by separate cleanup approval after processing ends. Legacy manifests keep their existing documented handling.
@@ -15,6 +21,8 @@ and explicit file exceptions. Editing the original preset does not change an exi
 ```powershell
 archivebench job create project-job.json --source footage --output archive-output --preset accepted-preset.json
 archivebench job inspect project-job.json
+# If required, only after explicitly accepting uncertain suitability:
+archivebench job inspect project-job.json --accept-uncertain-suitability
 archivebench job run project-job.json --execute
 ```
 

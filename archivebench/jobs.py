@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from .archive import archive, candidates, safe
-from .core import color_args, inspect_source, probe, run, validate_output
+from .core import color_args, fingerprint, inspect_source, probe, run, save, validate_output
 from .encoders import options
 from .formats import output_video, retention, scale_filter
-from .presets import inspect_preset, make_preset, resolve_settings
+from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .mux import suffix, mux_args, stream_gaps
 
 
@@ -43,6 +43,39 @@ def discover_job(output: Path) -> dict[str, Any] | None:
             "Saved job destination differs; restore its original location or choose another destination"
         )
     return copy.deepcopy(job)
+
+
+def resume_destination(job: dict[str, Any]) -> dict[str, Any]:
+    """Reuse the destination snapshot only when selection and settings agree."""
+    saved = discover_job(Path(job["output_root"]))
+    if saved is None:
+        return job
+
+    def selection(value):
+        source, output = Path(value["source_root"]), Path(value["output_root"])
+        return set(
+            value.get(
+                "selected_files",
+                [
+                    p.relative_to(source).as_posix()
+                    for p in candidates(source)
+                    if not p.is_relative_to(output)
+                ],
+            )
+        )
+
+    if saved["source_root"] != job["source_root"] or selection(saved) != selection(job):
+        raise ValueError(
+            "Destination job selection conflicts; resume the saved selection or choose another destination"
+        )
+    if (
+        resolve_settings(saved["preset"]) != resolve_settings(job["preset"])
+        or saved["exceptions"] != job["exceptions"]
+    ):
+        raise ValueError(
+            "Destination job settings conflict; resume the saved settings or choose another destination"
+        )
+    return saved
 
 
 @contextmanager
@@ -191,7 +224,10 @@ def create_job(
 
 
 def inspect_job(
-    job: dict[str, Any], ffprobe: str = "ffprobe", ffmpeg: str = "ffmpeg"
+    job: dict[str, Any],
+    ffprobe: str = "ffprobe",
+    ffmpeg: str = "ffmpeg",
+    alternatives: list[Path] | None = None,
 ) -> dict[str, Any]:
     validate_job(job)
     source, output = safe(Path(job["source_root"])), safe(Path(job["output_root"]))
@@ -351,7 +387,7 @@ def inspect_job(
     ancestor = output
     while not ancestor.exists():
         ancestor = ancestor.parent
-    return {
+    result = {
         "files": rows,
         "preflight": {
             "maximum_frames_per_file": 1,
@@ -372,6 +408,72 @@ def inspect_job(
             "scratch_basis": "source-size planning allowance; output size not guaranteed",
         },
     }
+    if alternatives is None:
+        alternatives = starter_paths()
+    if alternatives and any(row["compatibility"] == "unsupported" for row in rows):
+        result["alternative_selection"] = (
+            "Select an alternative explicitly and preflight the new job; current job remains unchanged"
+        )
+        result["alternatives"] = []
+        result["preflight"]["maximum_alternative_probes_per_file"] = len(alternatives)
+        for path in alternatives:
+            candidate = copy.deepcopy(job)
+            document = json.loads(path.read_text(encoding="utf-8"))
+            candidate["preset"] = document
+            item = {"path": str(path), "preset": document}
+            try:
+                checked = inspect_job(candidate, ffprobe, ffmpeg, alternatives=[])
+                item.update(
+                    compatibility="short probes passed for all selected encodes"
+                    if all(row["compatibility"] != "unsupported" for row in checked["files"])
+                    else "unsupported",
+                    files=checked["files"],
+                    estimates=checked["estimates"],
+                )
+            except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+                item.update(compatibility="unsupported", gaps=[str(error)])
+            result["alternatives"].append(item)
+    return result
+
+
+def suitability_decision(job: dict[str, Any], plan: dict[str, Any], accept: bool = False) -> dict:
+    """Consent for this selection and settings; never a visual or cleanup attestation."""
+    output = safe(Path(job["output_root"]))
+    path = safe(output / "suitability-acceptance.json", output)
+    scope = []
+    for row in plan["files"]:
+        if row["output"]:
+            stat = Path(row["source"]).stat()
+            scope.append(
+                {
+                    "source": row["source"],
+                    "size": stat.st_size,
+                    "modified_ns": stat.st_mtime_ns,
+                    "footage": row.get("footage"),
+                    "footage_scope": row.get("footage_scope"),
+                    "settings": row["settings"],
+                }
+            )
+    binding = fingerprint({"job": job, "scope": scope})
+    required = any(row.get("footage_scope") != "matches historical scope" for row in scope)
+    recorded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    if not isinstance(recorded, dict):
+        raise ValueError("Invalid suitability acceptance record")
+    if accept and required:
+        recorded = {
+            "status": "accepted-uncertain",
+            "binding": binding,
+            "scope": scope,
+            "note": "Explicit suitability acceptance; no visual review or deletion approval",
+        }
+        save(path, recorded)
+    if required:
+        return (
+            recorded
+            if recorded.get("binding") == binding and recorded.get("status") == "accepted-uncertain"
+            else {"status": "acceptance-required", "binding": binding}
+        )
+    return {"status": "historical-scope-matches" if scope else "no-compatible-encodes"}
 
 
 def run_job(
@@ -380,17 +482,23 @@ def run_job(
     ffmpeg: str = "ffmpeg",
     ffprobe: str = "ffprobe",
     stop_requested: Callable[[], bool] | None = None,
+    accept_uncertain_suitability: bool = False,
 ) -> dict[str, Any]:
     job = json.loads(job_path.read_text(encoding="utf-8"))
     print(
-        "Job preflight performs up to one frame per eligible file in temporary scratch (30-second probe limit). This is compatibility checking; full archive encoding requires --execute.",
+        "Job preflight performs up to one frame per eligible file and, on incompatibility, up to four bundled alternative probes per file in temporary scratch (30-second limit per probe). This is compatibility checking; full archive encoding requires --execute.",
         flush=True,
     )
     plan = inspect_job(job, ffprobe, ffmpeg)
     if stop_requested and stop_requested():
         raise KeyboardInterrupt
+    plan["suitability"] = suitability_decision(job, plan, accept_uncertain_suitability)
     print(json.dumps(plan, indent=2))
     if execute:
+        if plan["suitability"]["status"] == "acceptance-required":
+            raise ValueError(
+                "Accept uncertain preset suitability explicitly with --accept-uncertain-suitability after reviewing preflight"
+            )
         archive(
             Path(job["source_root"]),
             Path(job["output_root"]),

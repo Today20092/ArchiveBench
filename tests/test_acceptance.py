@@ -55,7 +55,7 @@ def completed_job(tmp_path, count=1):
     output = tmp_path / "output"
     config = tmp_path / "job.json"
     config.write_text(json.dumps(create_job(source, output, preset)))
-    run_job(config, True)
+    run_job(config, True, accept_uncertain_suitability=True)
     return source, output
 
 
