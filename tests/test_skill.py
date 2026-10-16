@@ -15,6 +15,10 @@ def test_skill_install_resolves_resources_outside_checkout(tmp_path):
     root = destination / "archivebench"
     entry = (root / "SKILL.md").read_text(encoding="utf-8")
     assert entry.startswith("---\nname: archivebench\n")
+    assert "\ndisable-model-invocation: true\n" in entry.split("---", 2)[1]
+    assert (root / "agents/openai.yaml").read_text(encoding="utf-8") == (
+        "policy:\n  allow_implicit_invocation: false\n"
+    )
     for path in root.rglob("*.md"):
         for target in re.findall(r"\]\(([^)]+)\)", path.read_text(encoding="utf-8")):
             if not target.startswith("https://"):
