@@ -45,7 +45,8 @@ def candidates(root: Path) -> list[Path]:
         "proxy",
         "proxies",
     ) or any(
-        (root / marker).exists()
+        (ancestor / marker).exists()
+        for ancestor in (root, *root.parents)
         for marker in (
             "archive-manifest.json",
             "archive-job.json",

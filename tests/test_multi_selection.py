@@ -207,6 +207,10 @@ def test_selected_archive_roots_are_excluded(tmp_path):
     assert root == source
     assert rows == [(original, True)]
     assert selection_defaults([generated])[2] == []
+    nested = generated / "nested"
+    nested.mkdir()
+    (nested / "old.mov").touch()
+    assert selection_defaults([nested])[2] == []
 
 
 def test_destination_discovers_preexecution_job_and_legacy_selection(tmp_path):
