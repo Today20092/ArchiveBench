@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from textual.widgets import DataTable, Input, Select, Static, TabbedContent
+from textual.widgets import Checkbox, DataTable, Input, Select, Static, TabbedContent
 
 from archivebench.core import save
 from archivebench.presets import make_preset, resolve_settings
@@ -29,7 +29,7 @@ def test_navigation_keeps_current_summaries_without_rewriting(tmp_path, monkeypa
                 return original(content, **kwargs)
 
             monkeypatch.setattr(summary, "update", track)
-            for _ in range(2):
+            for _ in range(3):
                 await pilot.click("#next")
                 await pilot.pause(0.4)
             assert app.query_one(TabbedContent).active == "step-review"
@@ -79,6 +79,7 @@ def test_readable_settings_and_aac_job(tmp_path, monkeypatch):
             await app.workers.wait_for_complete()
             await pilot.pause()
             await pilot.click("#next")
+            await pilot.click("#next")
             assert app.query_one(TabbedContent).active == "step-settings"
             app.query_one("#preset-table", DataTable).focus()
             await pilot.press("enter")
@@ -102,6 +103,7 @@ def test_readable_settings_and_aac_job(tmp_path, monkeypatch):
                 str(app.query_one("#status", Static).render()),
             )
             assert "128 kbps per channel" in str(app.query_one("#review-summary", Static).render())
+            app.query_one("#scope-accept", Checkbox).value = True
             app.prepare()
             await app.workers.wait_for_complete()
             assert app.job_path is not None, str(app.query_one("#status", Static).render())

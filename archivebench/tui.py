@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import sys
+import webbrowser
 from pathlib import Path
 
 from rich.text import Text
@@ -17,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import (
     Button,
+    Checkbox,
     Collapsible,
     DataTable,
     Footer,
@@ -31,7 +33,8 @@ from textual.widgets import (
     TabPane,
 )
 
-from .core import save
+from .core import save, validate_config
+from .experiments import experiment_plan, fixed_settings
 from .encoders import SPECS
 from .jobs import validate_job
 from .presets import resolve_settings, starter_paths
@@ -160,6 +163,8 @@ class ArchiveApp(App):
         self.preset_paths = [*sorted(self.library.glob("*.json")), *starter_paths()]
         self.preset_rates: dict[str, float | None] = {}
         self.durations: dict[str, float | None] = {}
+        self.comparison_config: Path | None = None
+        self.comparison_hash = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -175,6 +180,52 @@ class ArchiveApp(App):
                     yield Button("Select none", id="none")
                 yield SelectionList[str](id="clips")
                 yield Static("No clips selected", id="selection-summary", markup=False)
+            with TabPane("Setup / compare", id="step-setup"), VerticalScroll():
+                yield Label("FIRST USE", classes="section-title")
+                yield Static(
+                    "Recommended: compare representative clips, explore the report and export a measured starting preset. "
+                    "For immediate use, continue to Settings and choose a built-in starter; no benchmark is required.",
+                    classes="hint",
+                )
+                yield Select(
+                    [
+                        ("Recommended: compare encoders", "compare"),
+                        ("Optional: short check of selected preset", "sample"),
+                    ],
+                    value="compare",
+                    allow_blank=False,
+                    id="comparison-kind",
+                )
+                yield Label("Total wall-clock allowance (minutes, including scoring and report)")
+                yield Input(value="30", id="comparison-minutes")
+                yield Label("New comparison output folder (keep outside selected source folders)")
+                yield Input(
+                    placeholder="Choose a new folder for this comparison", id="comparison-output"
+                )
+                with Collapsible(title="Comparison sections and encoders", collapsed=True):
+                    yield Static(
+                        "Uses every selected clip. Select representative clips in Clips first."
+                    )
+                    yield Label("Section start / length in seconds (same interval per clip)")
+                    yield Input(value="0", id="comparison-offset")
+                    yield Input(value="5", id="comparison-length")
+                    yield Label(
+                        "Comparison encoders (sample check uses the selected preset instead)"
+                    )
+                    yield Input(value="libx265,libsvtav1,hevc_nvenc", id="comparison-encoders")
+                yield Button("Review comparison settings", id="comparison-review")
+                yield Static(
+                    "Review before starting. No encoding has started.",
+                    id="comparison-brief",
+                    markup=False,
+                )
+                yield Button("Start reviewed comparison", id="comparison-start", disabled=True)
+                yield Button(
+                    "Open completed report / export preset", id="comparison-report", disabled=True
+                )
+                yield Label("Load the preset JSON exported by the report")
+                yield Input(placeholder="Exported preset path", id="import-preset")
+                yield Button("Use exported preset", id="import-preset-button")
             with TabPane("2 Settings", id="step-settings"), VerticalScroll():
                 yield Label("CHOOSE AN ARCHIVE PRESET", classes="section-title")
                 yield Static("No clips selected", id="duration-summary", markup=False)
@@ -204,6 +255,16 @@ class ArchiveApp(App):
                 )
                 with Collapsible(title="Technical settings", id="preset-technical", collapsed=True):
                     yield Static("Choose a preset first.", id="preset-details", markup=False)
+                yield Static(
+                    "Historical measurements do not validate these clips. Output size is unknown without measurements. "
+                    "Optional sampling is in Setup / compare; estimates exclude retained streams, verification and untested footage.",
+                    id="scope-summary",
+                    markup=False,
+                )
+                yield Checkbox(
+                    "Accept uncertain suitability for these clips (sampling optional)",
+                    id="scope-accept",
+                )
                 yield Label("SAVE ARCHIVED COPIES TO", classes="section-title")
                 yield Static(
                     "Edit the output folder below. Selected folders retain their structure inside it. Your original files stay where they are.",
@@ -351,10 +412,17 @@ class ArchiveApp(App):
 
     def on_input_changed(self, event: Input.Changed):
         if not self.busy:
+            self.query_one("#comparison-start", Button).disabled = True
             self.invalidate()
 
     def on_selection_list_selected_changed(self):
+        self.query_one("#comparison-start", Button).disabled = True
+        self.query_one("#scope-accept", Checkbox).value = False
         self.refresh_estimates()
+        if not self.busy:
+            self.invalidate()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed):
         if not self.busy:
             self.invalidate()
 
@@ -405,11 +473,21 @@ class ArchiveApp(App):
         if self.busy:
             return
         self.invalidate()
+        self.query_one("#comparison-start", Button).disabled = True
         self.query_one("#aac-options").display = self.query_one("#audio", Select).value == "aac"
         if event.select.id == "preset" and isinstance(event.value, str):
+            self.query_one("#scope-accept", Checkbox).value = False
             try:
                 document = json.loads(Path(event.value).read_text(encoding="utf-8"))
                 settings = resolve_settings(document)
+                self.query_one("#scope-summary", Static).update(
+                    "Historical footage scope: "
+                    + json.dumps(document.get("scope", {}).get("footage", []), ensure_ascii=False)
+                    + "\nEvidence: "
+                    + str(document.get("evidence", {}).get("measurement_status", "unknown"))
+                    + ". Current clips are unvalidated; output size is unknown. Optional sample in Setup / compare. "
+                    "Sample estimates are approximate and exclude retained streams, verification and untested footage."
+                )
                 self.query_one("#summary", Static).update(
                     f"SELECTED: {document.get('name', Path(event.value).stem)}\n"
                     f"{document.get('description', preset_description(settings))}"
@@ -434,13 +512,15 @@ class ArchiveApp(App):
 
     def set_busy(self, value: bool):
         self.busy = value
-        for widget in self.query("Input, Select, SelectionList"):
+        for widget in self.query("Input, Select, SelectionList, Checkbox"):
             widget.disabled = value
         for name in ("add", "all", "none", "review"):
             self.query_one(f"#{name}", Button).disabled = value
         self.query_one("#preset-table", DataTable).disabled = value
         self.query_one("#stop", Button).disabled = not value
         self.query_one("#start", Button).disabled = value or not self.reviewed
+        for name in ("comparison-review", "import-preset-button"):
+            self.query_one(f"#{name}", Button).disabled = value
 
     @work(exclusive=True, group="scan")
     async def scan(self, sources):
@@ -488,10 +568,45 @@ class ArchiveApp(App):
         action = event.button.id
         if action in ("back", "next"):
             tabs = self.query_one(TabbedContent)
-            steps = ("step-clips", "step-settings", "step-review", "step-progress")
+            steps = tuple(pane.id for pane in self.query(TabPane))
             tabs.active = steps[
-                max(0, min(3, steps.index(tabs.active) + (1 if action == "next" else -1)))
+                max(
+                    0,
+                    min(len(steps) - 1, steps.index(tabs.active) + (1 if action == "next" else -1)),
+                )
             ]
+        elif action == "comparison-review":
+            self.review_comparison()
+        elif action == "comparison-start":
+            self.run_comparison()
+        elif action == "comparison-report" and self.comparison_config:
+            webbrowser.open((self.comparison_config.parent / "report.html").as_uri())
+        elif action == "import-preset-button":
+            try:
+                path = Path(
+                    self.query_one("#import-preset", Input).value.strip().strip('"')
+                ).resolve()
+                document = json.loads(path.read_text(encoding="utf-8"))
+                settings = resolve_settings(document)
+                if path not in self.preset_paths:
+                    self.preset_paths.append(path)
+                    self.preset_rates[str(path)] = measured_rate(document)
+                    facts = preset_facts(settings)
+                    self.query_one("#preset-table", DataTable).add_row(
+                        Text(document.get("name", path.stem)),
+                        *facts[:3],
+                        "No timing data",
+                        *facts[3:],
+                        key=str(path),
+                    )
+                    self.query_one("#preset", Select).set_options(
+                        [(p.stem, str(p)) for p in self.preset_paths]
+                    )
+                self.query_one("#preset", Select).value = str(path)
+                self.set_focus(None)
+                self.query_one(TabbedContent).active = "step-settings"
+            except (OSError, ValueError) as error:
+                self.error(error)
         elif action == "add":
             value = self.query_one("#source", Input).value.strip().strip('"')
             if value:
@@ -510,6 +625,135 @@ class ArchiveApp(App):
         if not self.busy and event.row_key.value is not None:
             self.query_one("#preset", Select).value = event.row_key.value
 
+    def review_comparison(self):
+        try:
+            selected = self.query_one("#clips", SelectionList).selected
+            if not selected:
+                raise ValueError("Select representative clips first")
+            output_text = self.query_one("#comparison-output", Input).value.strip().strip('"')
+            if not output_text:
+                raise ValueError("Choose a new comparison output folder")
+            output = Path(output_text).resolve()
+            if (output / "results.json").exists():
+                raise ValueError("Comparison already started; choose a new output folder")
+            start = float(self.query_one("#comparison-offset", Input).value)
+            seconds = float(self.query_one("#comparison-length", Input).value)
+            samples = []
+            for path in selected:
+                duration = self.durations.get(path)
+                if duration is None:
+                    raise ValueError("Wait for clip durations before comparison review")
+                if start < 0 or seconds <= 0 or start + seconds > duration:
+                    raise ValueError("Section must fit every selected clip")
+                samples.append(
+                    {"path": path, "label": Path(path).name, "start": start, "seconds": seconds}
+                )
+            sample = self.query_one("#comparison-kind", Select).value == "sample"
+            settings = {}
+            if sample:
+                preset = self.query_one("#preset", Select).value
+                if not isinstance(preset, str):
+                    raise ValueError("Choose a preset in Settings before sampling")
+                settings = resolve_settings(json.loads(Path(preset).read_text(encoding="utf-8")))
+            encoders = (
+                [settings["encoder"]]
+                if sample
+                else [
+                    item.strip()
+                    for item in self.query_one("#comparison-encoders", Input).value.split(",")
+                ]
+            )
+            config = {
+                "version": 1,
+                "strategy": "fixed",
+                "profile": "compact",
+                "mode": "quick",
+                "encode_repeats": 1,
+                "pixel_format": settings.get("pixel_format", "source"),
+                "resolution": settings.get("resolution", "original"),
+                "audio_mode": "copy",
+                "budget_minutes": float(self.query_one("#comparison-minutes", Input).value),
+                "samples": samples,
+                "encoders": encoders,
+            }
+            if sample:
+                config["fixed_settings"] = {settings["encoder"]: [settings["quality"]]}
+            config["fixed_settings"] = fixed_settings(config)
+            validate_config(config)
+            if any(Path(path).resolve().is_relative_to(output) for path in selected):
+                raise ValueError("Comparison output cannot contain a selected source")
+            config_path = output / "config.json"
+            if config_path.exists() and config_path != self.comparison_config:
+                raise ValueError(
+                    "Comparison folder has an existing configuration; choose a new folder"
+                )
+            self.comparison_config = config_path
+            save(self.comparison_config, config)
+            self.comparison_hash = hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
+            self.query_one("#comparison-brief", Static).update(
+                json.dumps(experiment_plan(config), indent=2)
+                + "\nOriginals retained. Video-only sample; no fresh validation or visual acceptance. "
+                "Size/time extrapolation is approximate; excludes retained streams, verification, untested footage. "
+                "Incomplete/failed trials remain visible in the report. Review these exact choices before Start."
+            )
+            self.query_one("#comparison-start", Button).disabled = False
+        except (OSError, ValueError) as error:
+            self.error(error)
+
+    @work(exclusive=True, group="comparison")
+    async def run_comparison(self):
+        if self.busy or self.comparison_config is None:
+            return
+        self.set_busy(True)
+        self.stop_pending = False
+        self.query_one("#comparison-start", Button).disabled = True
+        self.query_one("#comparison-report", Button).disabled = True
+        self.query_one(TabbedContent).active = "step-progress"
+        try:
+            if (
+                hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
+                != self.comparison_hash
+            ):
+                raise ValueError("Comparison settings changed; review again")
+            self.process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-u",
+                "-m",
+                "archivebench.tui_worker",
+                str(self.comparison_config),
+                "--comparison",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
+            assert self.process.stdout is not None
+            if self.stop_pending:
+                self.request_stop()
+            async for line in self.process.stdout:
+                self.query_one("#log", RichLog).write(
+                    line.decode("utf-8", errors="replace").rstrip()
+                )
+            code = await self.process.wait()
+            report = self.comparison_config.parent / "report.html"
+            self.query_one("#comparison-report", Button).disabled = not report.exists()
+            self.query_one("#status", Static).update(
+                f"Comparison {'finished' if code == 0 else 'stopped or failed'}. "
+                "Return to Setup / compare, open the report, inspect missing/failed evidence, export a preset and load it here. "
+                "Short measurements do not validate all footage."
+            )
+        except (OSError, ValueError) as error:
+            self.error(error)
+        finally:
+            if self.process and self.process.stdin:
+                self.process.stdin.close()
+            if self.process and self.process.returncode is None:
+                await self.process.wait()
+            self.process = None
+            self.set_busy(False)
+            if self.quit_pending:
+                self.exit()
+
     @work(exclusive=True, group="prepare")
     async def prepare(self):
         self.set_busy(True)
@@ -522,6 +766,10 @@ class ArchiveApp(App):
                 job = json.loads(path.read_text(encoding="utf-8"))
                 validate_job(job)
             else:
+                if not self.query_one("#scope-accept", Checkbox).value:
+                    raise ValueError(
+                        "Accept uncertain preset suitability in Settings, or run an optional comparison first"
+                    )
                 preset = self.query_one("#preset", Select).value
                 output = self.query_one("#output", Input).value.strip().strip('"')
                 if self.root is None or not isinstance(preset, str) or not output:
