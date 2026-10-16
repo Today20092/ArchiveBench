@@ -1,4 +1,4 @@
-"""Job replacement evidence: automated checks and two separate human attestations."""
+"""Job replacement evidence: automated checks and explicit human decisions."""
 
 import json
 import os
@@ -103,12 +103,34 @@ def inspect_acceptance(
         )
     binding = fingerprint({"job": job, "mapping": mapping})
     decisions = manifest.get("replacement_acceptance", {})
-    accepted = all(
-        isinstance(decisions.get(kind), dict)
-        and decisions[kind].get("binding") == binding
-        and decisions[kind].get("decision") == "accept"
-        and not decisions[kind].get("unmet_requirements")
-        for kind in ("visual", "editor")
+
+    def current_acceptance(kind):
+        record = decisions.get(kind)
+        return (
+            isinstance(record, dict)
+            and record.get("binding") == binding
+            and record.get("decision") == "accept"
+            and not record.get("unmet_requirements")
+        )
+
+    accepted = (
+        all(current_acceptance(kind) for kind in ("visual", "editor"))
+        or (
+            current_acceptance("quality-tradeoff")
+            and all(
+                not isinstance(decisions.get(kind), dict)
+                or decisions[kind].get("binding") != binding
+                or decisions[kind].get("decision") != "reject"
+                or decisions["quality-tradeoff"].get("recorded_at", "")
+                > decisions[kind].get("recorded_at", "")
+                for kind in ("visual", "editor")
+            )
+        )
+    ) and not any(
+        isinstance(record, dict)
+        and record.get("binding") == binding
+        and record.get("unmet_requirements")
+        for record in decisions.values()
     )
     return {
         "binding": binding,
@@ -116,7 +138,7 @@ def inspect_acceptance(
         "gaps": gaps,
         "attestations": decisions,
         "eligible": mapping if accepted and not gaps else [],
-        "caveat": "Human attestations, not automated proof of visual/editor acceptance. "
+        "caveat": "Quality-tradeoff acceptance does not claim visual/editor inspection. "
         "Unknown proprietary metadata and sidecar requirements must be reported as unmet.",
     }
 
@@ -132,10 +154,10 @@ def record_acceptance(
     note: str = "",
     unmet_requirements: list[str] | None = None,
 ) -> dict[str, Any]:
-    if kind not in ("visual", "editor") or decision not in ("accept", "reject"):
-        raise ValueError("Choose visual/editor and accept/reject")
+    if kind not in ("visual", "editor", "quality-tradeoff") or decision not in ("accept", "reject"):
+        raise ValueError("Choose visual/editor/quality-tradeoff and accept/reject")
     if not reviewer.strip() or not note.strip():
-        raise ValueError("Reviewer and observed review note are required")
+        raise ValueError("Reviewer and decision note are required")
     if kind == "editor" and (not editor.strip() or not project_copy.strip()):
         raise ValueError("Named editor/version and separate project copy are required")
     unmet = unmet_requirements or []
@@ -169,6 +191,9 @@ def record_acceptance(
         manifest = json.loads(path.read_text(encoding="utf-8"))
         manifest.setdefault("replacement_acceptance", {})[kind] = record
         save(path, manifest)
+        from .job_summary import refresh_summary
+
+        refresh_summary(root)
         return record
     finally:
         lock.unlink(missing_ok=True)
