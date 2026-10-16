@@ -21,6 +21,35 @@ def settings():
     }
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")
+def test_job_preflight_rejects_silent_pixel_format_substitution(tmp_path):
+    source = tmp_path / "project"
+    source.mkdir()
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=24",
+            "-t",
+            "0.5",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv422p10le",
+            str(source / "clip.mkv"),
+        ]
+    )
+    preset = tmp_path / "preset.json"
+    preset.write_text(json.dumps({**settings(), "encoder": "libsvtav1"}))
+    plan = inspect_job(create_job(source, tmp_path / "output", preset))
+    assert plan["files"][0]["compatibility"] == "unsupported"
+    assert "bit depth/chroma" in str(plan["files"][0]["gaps"])
+
+
 def test_job_snapshot_and_exception_boundaries(tmp_path):
     source = tmp_path / "project"
     source.mkdir()

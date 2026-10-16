@@ -34,7 +34,7 @@ from textual.widgets import (
 from .core import save
 from .encoders import SPECS
 from .jobs import validate_job
-from .presets import resolve_settings
+from .presets import resolve_settings, starter_paths
 from .selection import selected_job, selection_defaults
 from .tui_estimates import clip_duration, duration_label, measured_rate
 
@@ -157,7 +157,7 @@ class ArchiveApp(App):
         self.stop_pending = False
         self.quit_pending = False
         self.default_output = ""
-        self.preset_paths = sorted(self.library.glob("*.json"))
+        self.preset_paths = [*sorted(self.library.glob("*.json")), *starter_paths()]
         self.preset_rates: dict[str, float | None] = {}
         self.durations: dict[str, float | None] = {}
 
@@ -202,6 +202,8 @@ class ArchiveApp(App):
                     id="summary",
                     markup=False,
                 )
+                with Collapsible(title="Technical settings", id="preset-technical", collapsed=True):
+                    yield Static("Choose a preset first.", id="preset-details", markup=False)
                 yield Label("SAVE ARCHIVED COPIES TO", classes="section-title")
                 yield Static(
                     "Edit the output folder below. Selected folders retain their structure inside it. Your original files stay where they are.",
@@ -303,15 +305,17 @@ class ArchiveApp(App):
         table.add_column("Est. encode", key="estimate")
         table.add_columns("Color / bit depth", "Resolution")
         for path in self.preset_paths:
+            name = path.stem
             try:
                 document = json.loads(path.read_text(encoding="utf-8"))
                 facts = preset_facts(resolve_settings(document))
+                name = document.get("name", name)
                 self.preset_rates[str(path)] = measured_rate(document)
             except (OSError, ValueError, KeyError):
                 facts = ("Invalid preset", "-", "-", "-", "-")
             cells = [Text(str(value)) for value in facts]
             cells[1].stylize({"CPU": "bold #ddd6fe", "GPU": "bold #fde68a"}.get(facts[1], ""))
-            table.add_row(Text(path.stem), *cells[:3], "Select clips", *cells[3:], key=str(path))
+            table.add_row(Text(name), *cells[:3], "Select clips", *cells[3:], key=str(path))
         table.cursor_foreground_priority = "renderable"
         self.query_one("#aac-options").display = False
         if self.sources:
@@ -407,7 +411,14 @@ class ArchiveApp(App):
                 document = json.loads(Path(event.value).read_text(encoding="utf-8"))
                 settings = resolve_settings(document)
                 self.query_one("#summary", Static).update(
-                    f"SELECTED: {Path(event.value).stem}\n{preset_description(settings)}"
+                    f"SELECTED: {document.get('name', Path(event.value).stem)}\n"
+                    f"{document.get('description', preset_description(settings))}"
+                )
+                self.query_one("#preset-details", Static).update(
+                    f"{preset_description(settings)}\nEncoder: {settings['encoder']}\n"
+                    "Source frame rate retained. Audio policy is selected below.\n"
+                    "Encoder controls (source pixel format resolved per clip):\n"
+                    + " ".join(document.get("encoder_options", []))
                 )
             except (OSError, ValueError) as error:
                 self.error(error)
