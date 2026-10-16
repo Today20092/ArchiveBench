@@ -6,6 +6,8 @@ Run `uv run archivebench-tui` from the checkout, or `archivebench-tui` after ins
 
 ## Settings and navigation
 
+See [the screenshots below](#screenshots) for an example selection and preset review.
+
 The preset table compares codec, device, quality control, color format and resolution. Click a row or press Enter to select it; the summary confirms the applied preset. Arrow keys move the cursor, and narrow windows can scroll the table horizontally. The UI uses Tailwind Slate neutrals with Sky focus/selection and Amber/Rose warnings/errors.
 
 **Est. encode** multiplies the total duration of the currently selected clips by each preset's measured encoding seconds per source second. The selected duration appears above the table. Durations are read in the background without encoding, and selecting/deselecting clips reuses those readings. Adding sources refreshes them. Missing duration metadata shows **Duration unavailable**; presets without valid measured timing show **No timing data**. These estimates describe video encoding on the historical benchmark hardware and footage, exclude audio processing and verification, and are not completion guarantees. A saved resume job has its own selection and progress; these table estimates do not describe its remaining work.
@@ -39,6 +41,30 @@ archivebench-tui --job "D:\Project\Archived Footage.job.json"
 **Stop** asks for confirmation. During encoding the engine stops and waits for its owned FFmpeg process. Preflight, hashing or verification may finish their current operation first; the UI says stopping until the worker exits. Keep the terminal open during this wait. Completed verified files remain; interrupted files restart from the beginning. Ctrl+Q and Ctrl+C request safe exit through the same confirmation. Load the exact saved job and run Review then Start to resume. Source/output hash and settings checks remain enforced. Forced terminal closure is not a substitute for the Stop action; abnormal termination may require investigating a stale lock.
 
 The proposed output is `Archived Footage` beneath the project or common source folder. Selecting `Original Footage` directly proposes a sibling destination. The output can be on another drive. Choose a different destination to keep another preset version; saved jobs cannot silently change their selected files or settings.
+
+## Screenshots
+
+These captures show the local development TUI on 2026-10-16 with three synthetic, three-second clips and illustrative presets. Textual exported the running application's screens at 132 columns by 48 rows; the exports were rendered to PNG. The frame is Textual's export frame, not a Windows terminal screenshot. Fonts and spacing can vary with your terminal.
+
+The example presets have no benchmark evidence or visual approval. Their quality numbers use different encoder scales and are not recommendations. No archive job or benchmark was started for these captures.
+
+### Choose clips
+
+Add folders or individual files, then select the clips to archive. This example keeps the `Camera A` and `Camera B` subfolders under `Original Footage`.
+
+![Clips tab with three synthetic clips selected under Camera A and Camera B.](images/tui-clips.png)
+
+### Compare presets and choose a destination
+
+The table shows each preset's codec, CPU or GPU device, quality control, color format and resolution. The selected HEVC CPU example matches the source color format and copies audio. Its destination is the project's `Archived Footage` folder. **No timing data** appears because these illustrative presets have no measured encoding rate.
+
+![Settings tab with three example presets, HEVC CPU selected, a destination folder and Copy all audio.](images/tui-settings.png)
+
+### Review before starting
+
+Check the selected clip count, source and destination, preset, audio and output policies. In this capture, preflight has not run, so **Start / resume reviewed job** is disabled. An existing job can be loaded in the saved-job field.
+
+![Review tab showing three selected clips, MOV output, preserved timecode and a disabled Start button before preflight.](images/tui-review.png)
 
 ## Other interfaces and limits
 
