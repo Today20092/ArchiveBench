@@ -54,8 +54,12 @@ try {
     Write-Host "Output: $output"
     Invoke-ArchiveBench -ArchiveArguments @('job', 'inspect', $jobPath)
     if (-not $InspectOnly) {
-        $confirm = Read-Host 'Type ARCHIVE to encode/resume with these settings; originals stay intact (anything else cancels)'
-        if ($confirm -eq 'ARCHIVE') { Invoke-ArchiveBench -ArchiveArguments @('job', 'run', $jobPath, '--execute') }
+        $confirm = Read-Host 'Type ARCHIVE to encode/resume; if preflight requires suitability acceptance, type ACCEPT UNCERTAIN AND ARCHIVE to explicitly accept it (no visual review or deletion approval; anything else cancels)'
+        if ($confirm -in @('ARCHIVE', 'ACCEPT UNCERTAIN AND ARCHIVE')) {
+            $runArguments = @('job', 'run', $jobPath, '--execute')
+            if ($confirm -eq 'ACCEPT UNCERTAIN AND ARCHIVE') { $runArguments += '--accept-uncertain-suitability' }
+            Invoke-ArchiveBench -ArchiveArguments $runArguments
+        }
     }
     Write-Host 'Originals are kept. Review replacements and editor compatibility before a separate cleanup.'
 } catch {

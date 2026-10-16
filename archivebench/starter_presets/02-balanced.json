@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "type": "archive-preset",
+  "name": "Balanced",
+  "description": "Built-in starter, untested on your footage. Middle HEVC starting setting, using ArchiveBench's existing encoder default. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
+  "settings": {
+    "version": 2,
+    "type": "archive-settings",
+    "encoder": "libx265",
+    "quality": 24,
+    "pixel_format": "source",
+    "resolution": "original",
+    "audio_mode": "copy",
+    "drop_audio_tracks": [],
+    "evidence_status": "unmeasured-starter"
+  },
+  "encoder_options": [
+    "-c:v",
+    "libx265",
+    "-preset",
+    "medium",
+    "-crf",
+    "24",
+    "-pix_fmt",
+    "yuv420p"
+  ],
+  "scope": {
+    "environment": {},
+    "footage": []
+  },
+  "evidence": {
+    "settings_fingerprint": "{\"audio_mode\":\"copy\",\"drop_audio_tracks\":[],\"encoder\":\"libx265\",\"evidence_status\":\"unmeasured-starter\",\"pixel_format\":\"source\",\"quality\":24,\"resolution\":\"original\",\"type\":\"archive-settings\",\"version\":2}",
+    "benchmark_identity": null,
+    "measurement_status": "unmeasured-starter",
+    "visual_status": "unreviewed",
+    "estimates": {
+      "basis": "unknown",
+      "coverage": [],
+      "exclusions": [
+        "retained streams",
+        "verification",
+        "untested footage"
+      ]
+    }
+  }
+}

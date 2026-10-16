@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import sys
+import webbrowser
 from pathlib import Path
+from contextlib import asynccontextmanager, nullcontext
 
 from rich.text import Text
 
@@ -17,6 +19,7 @@ from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import (
     Button,
+    Checkbox,
     Collapsible,
     DataTable,
     Footer,
@@ -31,10 +34,13 @@ from textual.widgets import (
     TabPane,
 )
 
-from .core import save
+from .acceptance import inspect_acceptance, record_acceptance
+from .archive import cleanup
+from .core import save, validate_config
+from .experiments import experiment_plan, fixed_settings
 from .encoders import SPECS
 from .jobs import validate_job
-from .presets import resolve_settings
+from .presets import resolve_settings, starter_paths
 from .selection import selected_job, selection_defaults
 from .tui_estimates import clip_duration, duration_label, measured_rate
 
@@ -151,15 +157,19 @@ class ArchiveApp(App):
         self.root: Path | None = None
         self.job_path: Path | None = None
         self.job_hash = ""
+        self.deletion_preview = None
         self.reviewed = False
+        self.suitability_required = False
         self.busy = False
         self.process: asyncio.subprocess.Process | None = None
         self.stop_pending = False
         self.quit_pending = False
         self.default_output = ""
-        self.preset_paths = sorted(self.library.glob("*.json"))
+        self.preset_paths = [*sorted(self.library.glob("*.json")), *starter_paths()]
         self.preset_rates: dict[str, float | None] = {}
         self.durations: dict[str, float | None] = {}
+        self.comparison_config: Path | None = None
+        self.comparison_hash = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -175,6 +185,52 @@ class ArchiveApp(App):
                     yield Button("Select none", id="none")
                 yield SelectionList[str](id="clips")
                 yield Static("No clips selected", id="selection-summary", markup=False)
+            with TabPane("Setup / compare", id="step-setup"), VerticalScroll():
+                yield Label("FIRST USE", classes="section-title")
+                yield Static(
+                    "Recommended: compare representative clips, explore the report and export a measured starting preset. "
+                    "For immediate use, continue to Settings and choose a built-in starter; no benchmark is required.",
+                    classes="hint",
+                )
+                yield Select(
+                    [
+                        ("Recommended: compare encoders", "compare"),
+                        ("Optional: short check of selected preset", "sample"),
+                    ],
+                    value="compare",
+                    allow_blank=False,
+                    id="comparison-kind",
+                )
+                yield Label("Total wall-clock allowance (minutes, including scoring and report)")
+                yield Input(value="30", id="comparison-minutes")
+                yield Label("New comparison output folder (keep outside selected source folders)")
+                yield Input(
+                    placeholder="Choose a new folder for this comparison", id="comparison-output"
+                )
+                with Collapsible(title="Comparison sections and encoders", collapsed=True):
+                    yield Static(
+                        "Uses every selected clip. Select representative clips in Clips first."
+                    )
+                    yield Label("Section start / length in seconds (same interval per clip)")
+                    yield Input(value="0", id="comparison-offset")
+                    yield Input(value="5", id="comparison-length")
+                    yield Label(
+                        "Comparison encoders (sample check uses the selected preset instead)"
+                    )
+                    yield Input(value="libx265,libsvtav1,hevc_nvenc", id="comparison-encoders")
+                yield Button("Review comparison settings", id="comparison-review")
+                yield Static(
+                    "Review before starting. No encoding has started.",
+                    id="comparison-brief",
+                    markup=False,
+                )
+                yield Button("Start reviewed comparison", id="comparison-start", disabled=True)
+                yield Button(
+                    "Open completed report / export preset", id="comparison-report", disabled=True
+                )
+                yield Label("Load the preset JSON exported by the report")
+                yield Input(placeholder="Exported preset path", id="import-preset")
+                yield Button("Use exported preset", id="import-preset-button")
             with TabPane("2 Settings", id="step-settings"), VerticalScroll():
                 yield Label("CHOOSE AN ARCHIVE PRESET", classes="section-title")
                 yield Static("No clips selected", id="duration-summary", markup=False)
@@ -190,6 +246,11 @@ class ArchiveApp(App):
                 )
                 presets = self.preset_paths
                 yield DataTable(id="preset-table", cursor_type="row", zebra_stripes=True)
+                yield Static(
+                    "Alternatives are probed only after a rejected preflight.",
+                    id="alternatives",
+                    markup=False,
+                )
                 if not presets:
                     yield Static(
                         f"No saved presets found in {self.library}", classes="hint", markup=False
@@ -201,6 +262,18 @@ class ArchiveApp(App):
                     "Choose a preset to see codec, quality and chroma policy.",
                     id="summary",
                     markup=False,
+                )
+                with Collapsible(title="Technical settings", id="preset-technical", collapsed=True):
+                    yield Static("Choose a preset first.", id="preset-details", markup=False)
+                yield Static(
+                    "Historical measurements do not validate these clips. Output size is unknown without measurements. "
+                    "Optional sampling is in Setup / compare; estimates exclude retained streams, verification and untested footage.",
+                    id="scope-summary",
+                    markup=False,
+                )
+                yield Checkbox(
+                    "Accept uncertain suitability for these clips (sampling optional)",
+                    id="scope-accept",
                 )
                 yield Label("SAVE ARCHIVED COPIES TO", classes="section-title")
                 yield Static(
@@ -287,6 +360,29 @@ class ArchiveApp(App):
             with TabPane("4 Progress", id="step-progress"):
                 yield Button("Stop safely", id="stop", disabled=True, variant="warning")
                 yield RichLog(id="log", wrap=True, markup=False, highlight=False, max_lines=2000)
+            with TabPane("5 Accept / cleanup", id="step-cleanup"), VerticalScroll():
+                yield Static(
+                    "After processing ends, optionally spot-check outputs or reopen an editor copy. "
+                    "Actual visual/editor reviews can be recorded with the acceptance command. "
+                    "You may instead explicitly accept the preset's quality tradeoff without inspection. "
+                    "Neither processing nor acceptance authorizes deletion.",
+                    classes="hint",
+                )
+                yield Input(placeholder="Your name", id="acceptance-name")
+                yield Input(placeholder="Why you accept the quality tradeoff", id="acceptance-note")
+                yield Button("Accept quality tradeoff without inspection", id="accept-tradeoff")
+                yield Button("Preview original deletion", id="preview-deletion")
+                yield Static(
+                    "No deletion preview. Originals remain intact.",
+                    id="deletion-preview",
+                    markup=False,
+                )
+                yield Button(
+                    "Approve permanent deletion of previewed originals",
+                    id="delete-originals",
+                    disabled=True,
+                    variant="warning",
+                )
         with Horizontal(id="navigation"):
             yield Button("Back", id="back")
             yield Button("Next", id="next", variant="primary")
@@ -303,21 +399,28 @@ class ArchiveApp(App):
         table.add_column("Est. encode", key="estimate")
         table.add_columns("Color / bit depth", "Resolution")
         for path in self.preset_paths:
+            name = path.stem
             try:
                 document = json.loads(path.read_text(encoding="utf-8"))
                 facts = preset_facts(resolve_settings(document))
+                name = document.get("name", name)
                 self.preset_rates[str(path)] = measured_rate(document)
             except (OSError, ValueError, KeyError):
                 facts = ("Invalid preset", "-", "-", "-", "-")
             cells = [Text(str(value)) for value in facts]
             cells[1].stylize({"CPU": "bold #ddd6fe", "GPU": "bold #fde68a"}.get(facts[1], ""))
-            table.add_row(Text(path.stem), *cells[:3], "Select clips", *cells[3:], key=str(path))
+            table.add_row(Text(name), *cells[:3], "Select clips", *cells[3:], key=str(path))
         table.cursor_foreground_priority = "renderable"
         self.query_one("#aac-options").display = False
         if self.sources:
             self.scan(self.sources)
 
     def invalidate(self):
+        self.deletion_preview = None
+        self.query_one("#delete-originals", Button).disabled = True
+        self.query_one("#deletion-preview", Static).update(
+            "No current deletion preview. Preview again before approval."
+        )
         self.reviewed = False
         self.query_one("#start", Button).disabled = True
         self.refresh_summary()
@@ -347,10 +450,19 @@ class ArchiveApp(App):
 
     def on_input_changed(self, event: Input.Changed):
         if not self.busy:
+            if event.input.id in ("output", "saved-job"):
+                self.query_one("#scope-accept", Checkbox).value = False
+            self.query_one("#comparison-start", Button).disabled = True
             self.invalidate()
 
     def on_selection_list_selected_changed(self):
+        self.query_one("#comparison-start", Button).disabled = True
+        self.query_one("#scope-accept", Checkbox).value = False
         self.refresh_estimates()
+        if not self.busy:
+            self.invalidate()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed):
         if not self.busy:
             self.invalidate()
 
@@ -401,13 +513,37 @@ class ArchiveApp(App):
         if self.busy:
             return
         self.invalidate()
+        if event.select.id in ("preset", "container", "audio", "timecode", "data", "aac-bitrate"):
+            self.query_one("#scope-accept", Checkbox).value = False
+        self.query_one("#comparison-start", Button).disabled = True
         self.query_one("#aac-options").display = self.query_one("#audio", Select).value == "aac"
         if event.select.id == "preset" and isinstance(event.value, str):
+            self.query_one("#scope-accept", Checkbox).value = False
             try:
                 document = json.loads(Path(event.value).read_text(encoding="utf-8"))
                 settings = resolve_settings(document)
+                self.query_one("#scope-summary", Static).update(
+                    "Historical footage scope: "
+                    + json.dumps(document.get("scope", {}).get("footage", []), ensure_ascii=False)
+                    + "\nEvidence: "
+                    + str(document.get("evidence", {}).get("measurement_status", "unknown"))
+                    + ". Current clips are unvalidated; output size is unknown. Optional sample in Setup / compare. "
+                    "Sample estimates are approximate and exclude retained streams, verification and untested footage."
+                )
                 self.query_one("#summary", Static).update(
-                    f"SELECTED: {Path(event.value).stem}\n{preset_description(settings)}"
+                    f"SELECTED: {document.get('name', Path(event.value).stem)}\n"
+                    f"{document.get('description', preset_description(settings))}"
+                )
+                self.query_one("#preset-details", Static).update(
+                    f"{preset_description(settings)}\nEncoder: {settings['encoder']}\n"
+                    "Source frame rate retained. Audio policy is selected below.\n"
+                    + (
+                        "Actual pixel format matches each source clip; incompatible formats are rejected.\n"
+                        "Stored encoder controls below: yuv420p is a template placeholder.\n"
+                        if settings["pixel_format"] == "source"
+                        else "Encoder controls:\n"
+                    )
+                    + " ".join(document.get("encoder_options", []))
                 )
             except (OSError, ValueError) as error:
                 self.error(error)
@@ -418,13 +554,16 @@ class ArchiveApp(App):
 
     def set_busy(self, value: bool):
         self.busy = value
-        for widget in self.query("Input, Select, SelectionList"):
+        for widget in self.query("Input, Select, SelectionList, Checkbox"):
             widget.disabled = value
-        for name in ("add", "all", "none", "review"):
+        for name in ("add", "all", "none", "review", "accept-tradeoff", "preview-deletion"):
             self.query_one(f"#{name}", Button).disabled = value
+        self.query_one("#delete-originals", Button).disabled = value or not self.deletion_preview
         self.query_one("#preset-table", DataTable).disabled = value
         self.query_one("#stop", Button).disabled = not value
         self.query_one("#start", Button).disabled = value or not self.reviewed
+        for name in ("comparison-review", "import-preset-button"):
+            self.query_one(f"#{name}", Button).disabled = value
 
     @work(exclusive=True, group="scan")
     async def scan(self, sources):
@@ -472,10 +611,47 @@ class ArchiveApp(App):
         action = event.button.id
         if action in ("back", "next"):
             tabs = self.query_one(TabbedContent)
-            steps = ("step-clips", "step-settings", "step-review", "step-progress")
+            steps = tuple(pane.id for pane in self.query(TabPane))
             tabs.active = steps[
-                max(0, min(3, steps.index(tabs.active) + (1 if action == "next" else -1)))
+                max(
+                    0,
+                    min(len(steps) - 1, steps.index(tabs.active) + (1 if action == "next" else -1)),
+                )
             ]
+        elif action == "comparison-review":
+            self.review_comparison()
+        elif action == "comparison-start":
+            self.run_comparison()
+        elif action == "comparison-report" and self.comparison_config:
+            webbrowser.open((self.comparison_config.parent / "report.html").as_uri())
+        elif action == "import-preset-button":
+            try:
+                path = Path(
+                    self.query_one("#import-preset", Input).value.strip().strip('"')
+                ).resolve()
+                document = json.loads(path.read_text(encoding="utf-8"))
+                settings = resolve_settings(document)
+                if path not in self.preset_paths:
+                    self.preset_paths.append(path)
+                    self.preset_rates[str(path)] = measured_rate(document)
+                    facts = preset_facts(settings)
+                    self.query_one("#preset-table", DataTable).add_row(
+                        Text(document.get("name", path.stem)),
+                        *facts[:3],
+                        "No timing data",
+                        *facts[3:],
+                        key=str(path),
+                    )
+                    self.query_one("#preset", Select).set_options(
+                        [(p.stem, str(p)) for p in self.preset_paths]
+                    )
+                self.query_one("#preset", Select).value = str(path)
+                self.set_focus(None)
+                self.query_one(TabbedContent).active = "step-settings"
+            except (OSError, ValueError) as error:
+                self.error(error)
+        elif action in ("accept-tradeoff", "preview-deletion", "delete-originals"):
+            self.postjob(action)
         elif action == "add":
             value = self.query_one("#source", Input).value.strip().strip('"')
             if value:
@@ -490,9 +666,178 @@ class ArchiveApp(App):
         elif action == "stop":
             self.push_screen(StopDialog(), self.confirm_stop)
 
+    @work(exclusive=True, group="postjob")
+    async def postjob(self, action: str):
+        if self.busy:
+            return
+        preview = self.deletion_preview
+        self.deletion_preview = None
+        self.set_busy(True)
+        try:
+            saved = self.query_one("#saved-job", Input).value.strip().strip('"')
+            path = Path(saved) if saved else self.job_path
+            if path is None:
+                raise ValueError("Load or finish a saved job first")
+            job = json.loads(path.read_text(encoding="utf-8"))
+            validate_job(job)
+            root = Path(job["output_root"])
+            if (root / ".lock").exists():
+                raise ValueError("Job is still active; wait before acceptance or cleanup")
+            if action == "accept-tradeoff":
+                await asyncio.to_thread(
+                    record_acceptance,
+                    root,
+                    "quality-tradeoff",
+                    "accept",
+                    self.query_one("#acceptance-name", Input).value,
+                    note=self.query_one("#acceptance-note", Input).value,
+                )
+                self.query_one("#deletion-preview", Static).update(
+                    "Quality tradeoff accepted without visual/editor inspection. Originals retained. Preview deletion separately."
+                )
+            else:
+                state = await asyncio.to_thread(inspect_acceptance, root)
+                if action == "delete-originals":
+                    if not preview or preview != (
+                        str(root),
+                        state["binding"],
+                        state["eligible"],
+                        state["attestations"],
+                    ):
+                        raise ValueError("Deletion preview missing or changed; preview again")
+                    await asyncio.to_thread(
+                        cleanup,
+                        root,
+                        True,
+                        True,
+                        selected_sources=[item["source"] for item in state["eligible"]],
+                    )
+                    self.query_one("#deletion-preview", Static).update(
+                        "Approved originals deleted. Archived outputs retained."
+                    )
+                elif state["eligible"]:
+                    self.deletion_preview = (
+                        str(root),
+                        state["binding"],
+                        state["eligible"],
+                        state["attestations"],
+                    )
+                    self.query_one("#deletion-preview", Static).update(
+                        "Permanent deletion preview (approval applies only to these originals):\n"
+                        + "\n".join(item["source"] for item in state["eligible"])
+                    )
+                else:
+                    raise ValueError(
+                        "No currently accepted verified replacements eligible for deletion"
+                    )
+        except (ValueError, OSError) as error:
+            self.error(error)
+        finally:
+            self.set_busy(False)
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected):
         if not self.busy and event.row_key.value is not None:
             self.query_one("#preset", Select).value = event.row_key.value
+
+    def review_comparison(self):
+        try:
+            selected = self.query_one("#clips", SelectionList).selected
+            if not selected:
+                raise ValueError("Select representative clips first")
+            output_text = self.query_one("#comparison-output", Input).value.strip().strip('"')
+            if not output_text:
+                raise ValueError("Choose a new comparison output folder")
+            output = Path(output_text).resolve()
+            if (output / "results.json").exists():
+                raise ValueError("Comparison already started; choose a new output folder")
+            start = float(self.query_one("#comparison-offset", Input).value)
+            seconds = float(self.query_one("#comparison-length", Input).value)
+            samples = []
+            for path in selected:
+                duration = self.durations.get(path)
+                if duration is None:
+                    raise ValueError("Wait for clip durations before comparison review")
+                if start < 0 or seconds <= 0 or start + seconds > duration:
+                    raise ValueError("Section must fit every selected clip")
+                samples.append(
+                    {"path": path, "label": Path(path).name, "start": start, "seconds": seconds}
+                )
+            sample = self.query_one("#comparison-kind", Select).value == "sample"
+            settings = {}
+            if sample:
+                preset = self.query_one("#preset", Select).value
+                if not isinstance(preset, str):
+                    raise ValueError("Choose a preset in Settings before sampling")
+                settings = resolve_settings(json.loads(Path(preset).read_text(encoding="utf-8")))
+            encoders = (
+                [settings["encoder"]]
+                if sample
+                else [
+                    item.strip()
+                    for item in self.query_one("#comparison-encoders", Input).value.split(",")
+                ]
+            )
+            config = {
+                "version": 1,
+                "strategy": "fixed",
+                "profile": "compact",
+                "mode": "quick",
+                "encode_repeats": 1,
+                "pixel_format": settings.get("pixel_format", "source"),
+                "resolution": settings.get("resolution", "original"),
+                "audio_mode": "copy",
+                "budget_minutes": float(self.query_one("#comparison-minutes", Input).value),
+                "samples": samples,
+                "encoders": encoders,
+            }
+            if sample:
+                config["fixed_settings"] = {settings["encoder"]: [settings["quality"]]}
+            config["fixed_settings"] = fixed_settings(config)
+            validate_config(config)
+            if any(Path(path).resolve().is_relative_to(output) for path in selected):
+                raise ValueError("Comparison output cannot contain a selected source")
+            config_path = output / "config.json"
+            if config_path.exists() and config_path != self.comparison_config:
+                raise ValueError(
+                    "Comparison folder has an existing configuration; choose a new folder"
+                )
+            self.comparison_config = config_path
+            save(self.comparison_config, config)
+            self.comparison_hash = hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
+            self.query_one("#comparison-brief", Static).update(
+                json.dumps(experiment_plan(config), indent=2)
+                + "\nOriginals retained. Video-only sample; no fresh validation or visual acceptance. "
+                "Size/time extrapolation is approximate; excludes retained streams, verification, untested footage. "
+                "Incomplete/failed trials remain visible in the report. Review these exact choices before Start."
+            )
+            self.query_one("#comparison-start", Button).disabled = False
+        except (OSError, ValueError) as error:
+            self.error(error)
+
+    @work(exclusive=True, group="comparison")
+    async def run_comparison(self):
+        if self.busy or self.comparison_config is None:
+            return
+        async with self.worker_session():
+            self.query_one("#comparison-start", Button).disabled = True
+            self.query_one("#comparison-report", Button).disabled = True
+            self.query_one(TabbedContent).active = "step-progress"
+            try:
+                if (
+                    hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
+                    != self.comparison_hash
+                ):
+                    raise ValueError("Comparison settings changed; review again")
+                code = await self.worker_output(self.comparison_config, ["--comparison"])
+                report = self.comparison_config.parent / "report.html"
+                self.query_one("#comparison-report", Button).disabled = not report.exists()
+                self.query_one("#status", Static).update(
+                    f"Comparison {'finished' if code == 0 else 'stopped or failed'}. "
+                    "Return to Setup / compare, open the report, inspect missing/failed evidence, export a preset and load it here. "
+                    "Short measurements do not validate all footage."
+                )
+            except (OSError, ValueError) as error:
+                self.error(error)
 
     @work(exclusive=True, group="prepare")
     async def prepare(self):
@@ -524,7 +869,7 @@ class ArchiveApp(App):
                 job = await asyncio.to_thread(
                     selected_job, self.root, Path(output), Path(preset), selected, policies
                 )
-                path = Path(str(job["output_root"]) + ".job.json")
+                path = Path(job["output_root"]) / "archive-job.json"
                 if path.exists():
                     if json.loads(path.read_text(encoding="utf-8")) != job:
                         raise ValueError(
@@ -558,52 +903,46 @@ class ArchiveApp(App):
     async def execute_engine(self, execute: bool):
         if self.busy or self.job_path is None:
             return
+        async with self.worker_session():
+            self.deletion_preview = None
+            self.query_one(TabbedContent).active = "step-progress"
+            try:
+                if hashlib.sha256(self.job_path.read_bytes()).hexdigest() != self.job_hash:
+                    raise ValueError("Saved job changed; review it again")
+                snapshot = json.loads(self.job_path.read_text(encoding="utf-8"))
+                log_path = Path(snapshot["output_root"]) / "archive-job.json.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                self.query_one("#status", Static).update(
+                    f"{'Encoding / verifying' if execute else 'Preflight'} — log: {log_path}"
+                )
+                args = ["--execute"] if execute else []
+                if self.query_one("#scope-accept", Checkbox).value:
+                    args.append("--accept-uncertain-suitability")
+                    self.query_one("#scope-accept", Checkbox).value = False
+                code = await self.worker_output(self.job_path, args, log_path)
+                self.reviewed = code == 0 and not execute and not self.suitability_required
+                status = (
+                    "Accept uncertain suitability in Settings, then preflight again before starting."
+                    if code == 0 and self.suitability_required
+                    else "Preflight finished. Check the Progress log, then return to Review to start."
+                    if self.reviewed
+                    else "Processing finished. Check failed / kept-original records. Continue to Accept / cleanup for optional review or quality-tradeoff acceptance, then separate deletion approval."
+                    if code == 0
+                    else "Stopped. Review the saved job to resume; completed files are retained."
+                    if code == 130
+                    else "Job failed. See the log; originals are retained."
+                )
+                self.query_one("#status", Static).update(status)
+            except (OSError, ValueError) as error:
+                self.reviewed = False
+                self.error(error)
+
+    @asynccontextmanager
+    async def worker_session(self):
         self.set_busy(True)
-        self.query_one(TabbedContent).active = "step-progress"
         self.stop_pending = False
-        log_path = Path(str(self.job_path) + ".log")
         try:
-            if hashlib.sha256(self.job_path.read_bytes()).hexdigest() != self.job_hash:
-                raise ValueError("Saved job changed; review it again")
-            self.query_one("#status", Static).update(
-                f"{'Encoding / verifying' if execute else 'Preflight'} — log: {log_path}"
-            )
-            self.process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-u",
-                "-m",
-                "archivebench.tui_worker",
-                str(self.job_path),
-                *(["--execute"] if execute else []),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-            )
-            assert self.process.stdout is not None
-            if self.stop_pending:
-                self.request_stop()
-            with log_path.open("a", encoding="utf-8") as log:
-                async for line in self.process.stdout:
-                    text = line.decode("utf-8", errors="replace").rstrip()
-                    log.write(text + "\n")
-                    log.flush()
-                    self.query_one("#log", RichLog).write(text)
-            code = await self.process.wait()
-            self.reviewed = code == 0 and not execute
-            status = (
-                "Preflight finished. Check the Progress log, then return to Review to start."
-                if self.reviewed
-                else "Processing finished. Check failed / kept-original records; visual acceptance is still required."
-                if code == 0
-                else "Stopped. Review the saved job to resume; completed files are retained."
-                if code == 130
-                else "Job failed. See the log; originals are retained."
-            )
-            self.query_one("#status", Static).update(status)
-        except (OSError, ValueError) as error:
-            self.reviewed = False
-            self.error(error)
+            yield
         finally:
             if self.process and self.process.stdin:
                 self.process.stdin.close()
@@ -613,6 +952,58 @@ class ArchiveApp(App):
             self.set_busy(False)
             if self.quit_pending:
                 self.exit()
+
+    async def worker_output(self, path: Path, args: list[str], log_path: Path | None = None):
+        self.process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-m",
+            "archivebench.tui_worker",
+            str(path),
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        assert self.process.stdout is not None
+        if self.stop_pending:
+            self.request_stop()
+        with log_path.open("a", encoding="utf-8") if log_path else nullcontext() as log:
+            async for line in self.process.stdout:
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if log:
+                    log.write(text + "\n")
+                    log.flush()
+                if text.startswith("ARCHIVEBENCH_PREFLIGHT="):
+                    plan = json.loads(text.split("=", 1)[1])
+                    self.suitability_required = (
+                        plan["suitability"]["status"] == "acceptance-required"
+                    )
+                    if plan.get("alternatives"):
+                        choices = [
+                            f"{item['preset']['name']}: {item['compatibility']} — {item['path']}\n"
+                            + "Tested settings: "
+                            + json.dumps(item["preset"]["settings"])
+                            + "\n"
+                            + "; ".join(
+                                item.get("gaps", [])
+                                + [
+                                    gap
+                                    for row in item.get("files", [])
+                                    for gap in row.get("gaps", [])
+                                ]
+                            )
+                            for item in plan["alternatives"]
+                        ]
+                        self.query_one("#alternatives", Static).update(
+                            "Probed on this selection (quality remains untested):\n"
+                            + "\n".join(choices)
+                            + "\nFirst failure shown per candidate; full per-file reasons are in the Progress log. Choose a preset above explicitly, match the shown policy settings and preflight again. Current job is unchanged."
+                        )
+                    continue
+                self.query_one("#log", RichLog).write(text)
+        return await self.process.wait()
 
     def request_stop(self):
         self.stop_pending = True

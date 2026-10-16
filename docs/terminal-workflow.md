@@ -59,6 +59,25 @@ archivebench acceptance inspect --output ARCHIVE_A
 archivebench cleanup --output ARCHIVE_A
 ```
 
-Review the mapping and archive, then reopen a separate editing-project copy using replacements. Follow [editor acceptance](editor-acceptance.md) to record actual visual/editor decisions. Without current acceptance, cleanup preview lists zero eligible replacements; execution cannot bypass missing acceptance. Encoding success cannot supply job acceptance. Cleanup remains a separately requested operation, dry-run by default. Keep-original exceptions remain intact.
+After processing ends, inspect the mapping. Follow [replacement acceptance](editor-acceptance.md) to record either actual visual/editor decisions or explicit quality-tradeoff acceptance without inspection. Without current acceptance, cleanup preview lists zero eligible replacements; execution cannot bypass missing acceptance. Encoding success cannot supply job acceptance. Cleanup remains a separately requested operation, dry-run by default. Keep-original exceptions remain intact.
 
 Current evidence covers Windows and the narrow synthetic Resolve path in that guide. Proprietary camera metadata, other NLEs, Log/HDR grading and physical 10-bit monitor fidelity are not certified.
+## Immediate use and job outcomes
+
+For a first project, a representative-footage comparison is recommended, or use a built-in starter immediately:
+
+```powershell
+archivebench preset list
+archivebench preset export STARTER_PATH_FROM_LIST --output starter.json
+archivebench job create project.json --source FOOTAGE_FOLDER --output EXTERNAL_OR_PROJECT_ARCHIVE --preset starter.json
+archivebench job inspect project.json
+archivebench job run project.json --execute
+```
+
+The list includes Quality priority, Balanced, Space priority and an explicit AVC alternative. These are unmeasured settings, not quality guarantees or measured size/time estimates. Preserve resolution, frame rate, bit depth and chroma by default; copy all audio tracks. Select format reductions or audio conversion explicitly. Technical incompatibility blocks that file; choose another compatible preset explicitly. If historical footage scope differs, a short comparison is optional; the TUI requires explicit acceptance of uncertain suitability.
+
+Select video footage only: this workflow does not back up editing projects, graphics, music or sidecars. Destinations may be within the project, on an external drive or at an arbitrary path. Relative footage paths are retained; generated archives are excluded from discovery. Keep enough free space for originals and replacements. CRF/CQ output sizes are uncertain; historical estimates exclude retained streams and verification and cannot promise fit.
+
+After a run, open `ARCHIVE_FOLDER/archive-summary.html` offline beside `archive-manifest.json`, the saved job and logs. It distinguishes verified, failed, kept-original, insufficient-saving and unfinished work. Replacement size reduction and potentially reclaimable original bytes are separate from net storage reclaimed after cleanup. Originals remain throughout encoding. The adjustable minimum-saving default is 10%.
+
+Rerun the same job command to resume; verified matching files are reused and interrupted files restart from their beginning. The guided UI loads an existing destination job by default. Conflicting settings or selections require resolving the conflict or choosing another destination. Recoverable per-file failures retain affected originals and continue; job-wide storage failures stop safely. After an interrupted run, resolve unfinished work before cleanup.

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from .archive import candidates, safe
-from .jobs import create_job, validate_job
+from .jobs import create_job, resume_destination, validate_job
 from .presets import make_preset, resolve_settings
 
 
@@ -70,4 +70,4 @@ def selected_job(
     available = {p.relative_to(source.resolve()).as_posix() for p in candidates(source.resolve())}
     if not set(selected).issubset(available):
         raise ValueError("Selection contains missing or excluded files")
-    return job
+    return resume_destination(job)

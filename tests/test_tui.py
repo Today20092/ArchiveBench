@@ -5,12 +5,45 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from textual.widgets import Input, Select, SelectionList, Button
+from textual.widgets import (
+    Checkbox,
+    Input,
+    Select,
+    SelectionList,
+    Button,
+    Collapsible,
+    DataTable,
+    Static,
+)
 
 from archivebench.core import save
 from archivebench.presets import make_preset
 from archivebench.selection import selected_job
 from archivebench.tui import ArchiveApp
+
+
+def test_tui_starters_available_without_saved_presets(tmp_path):
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "empty-library")
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            table = app.query_one("#preset-table", DataTable)
+            assert table.row_count == 4
+            app.query_one("#preset", Select).value = str(app.preset_paths[0])
+            await pilot.pause()
+            assert "Quality priority" in str(app.query_one("#summary", Static).content)
+            assert "untested on your footage" in str(app.query_one("#summary", Static).content)
+            assert app.query_one("#preset-technical", Collapsible).collapsed
+            details = str(app.query_one("#preset-details", Static).content)
+            assert "CRF 20" in details
+            assert "-preset medium" in details
+            assert "Match source" in details
+            assert "yuv420p is a template placeholder" in details
+            assert "Actual pixel format matches each source clip" in details
+            assert app.query_one("#audio", Select).value == "copy"
+            assert not (tmp_path / "empty-library").exists()
+
+    asyncio.run(exercise())
 
 
 def preset(library):
@@ -94,6 +127,13 @@ def test_tui_real_encode_resume(tmp_path):
             app.prepare()
             await app.workers.wait_for_complete()
             await pilot.pause()
+            assert not app.reviewed
+            assert app.query_one("#start", Button).disabled
+            assert not (output / "archive-manifest.json").exists()
+            app.query_one("#scope-accept", Checkbox).value = True
+            app.prepare()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
             assert app.reviewed
             app.run_engine(True)
             await app.workers.wait_for_complete()
@@ -107,6 +147,67 @@ def test_tui_real_encode_resume(tmp_path):
             await app.workers.wait_for_complete()
             assert target.stat().st_mtime_ns == modified
             assert not (output / ".lock").exists()
+            assert (source / "a.mkv").exists()
+            app.query_one("#audio", Select).value = "none"
+            await pilot.pause()
+            assert not app.query_one("#scope-accept", Checkbox).value
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")
+def test_tui_rejected_choice_offers_probed_alternatives_without_selecting_one(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=10",
+            "-t",
+            "0.5",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv422p10le",
+            str(source / "a.mkv"),
+        ],
+        check=True,
+    )
+    library = tmp_path / "presets"
+    document = library / "rejected.json"
+    save(
+        document,
+        make_preset(
+            {
+                "version": 2,
+                "type": "archive-settings",
+                "encoder": "libsvtav1",
+                "quality": 30,
+                "pixel_format": "source",
+            }
+        ),
+    )
+    output = tmp_path / "output"
+    job_path = tmp_path / "job.json"
+    job = selected_job(source, output, document, ["a.mkv"], {})
+    save(job_path, job)
+
+    async def exercise():
+        app = ArchiveApp(library=library, job=job_path)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            app.prepare()
+            await app.workers.wait_for_complete()
+            offered = str(app.query_one("#alternatives", Static).content)
+            assert "Balanced (AVC alternative): short probes passed" in offered
+            assert "Choose a preset above explicitly" in offered
+            assert json.loads(job_path.read_text()) == job
+            assert not (output / "archive-manifest.json").exists()
             assert (source / "a.mkv").exists()
 
     asyncio.run(exercise())
@@ -191,11 +292,12 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
         app = ArchiveApp(library=library, job=job_path)
         async with app.run_test(size=(120, 60)) as pilot:
             await pilot.pause()
+            app.query_one("#scope-accept", Checkbox).value = True
             app.prepare()
             await app.workers.wait_for_complete()
             assert app.reviewed
             app.run_engine(True)
-            log_path = Path(str(job_path) + ".log")
+            log_path = output / "archive-job.json.log"
             for _ in range(600):
                 if log_path.exists() and "Encoding:" in log_path.read_text():
                     break
@@ -221,5 +323,73 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
                 == "verified"
             )
             assert (source / "a.mkv").exists()
+
+    asyncio.run(exercise())
+
+
+def test_tui_postjob_tradeoff_and_separate_deletion(tmp_path):
+    from tests.test_acceptance import completed_job
+
+    source, output = completed_job(tmp_path)
+    job_path = tmp_path / "completed.job.json"
+    save(job_path, json.loads((output / "archive-manifest.json").read_text())["job"])
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "presets", job=job_path)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.query_one("#acceptance-name", Input).value = "User"
+            app.query_one(
+                "#acceptance-note", Input
+            ).value = "Accept quality loss without inspection"
+            app.postjob("accept-tradeoff")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            assert str(source / "clip.mkv") in str(
+                app.query_one("#deletion-preview", Static).content
+            )
+            assert not app.query_one("#delete-originals", Button).disabled
+            assert (source / "clip.mkv").exists()
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert not (source / "clip.mkv").exists()
+
+    asyncio.run(exercise())
+
+
+def test_tui_deletion_preview_expires_on_new_consent_or_destination_change(tmp_path):
+    from archivebench.acceptance import record_acceptance
+    from tests.test_acceptance import completed_job
+
+    source, output = completed_job(tmp_path)
+    job_path = tmp_path / "completed.job.json"
+    save(job_path, json.loads((output / "archive-manifest.json").read_text())["job"])
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept loss")
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "presets", job=job_path)
+        async with app.run_test(size=(120, 60)) as pilot:
+            await pilot.pause()
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            record_acceptance(output, "quality-tradeoff", "accept", "User", note="Renew decision")
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.postjob("preview-deletion")
+            await app.workers.wait_for_complete()
+            app.query_one("#output", Input).value = str(tmp_path / "other-output")
+            await pilot.pause()
+            assert app.query_one("#delete-originals", Button).disabled
+            app.set_busy(True)
+            app.postjob("delete-originals")
+            await app.workers.wait_for_complete()
+            assert (source / "clip.mkv").exists()
+            app.set_busy(False)
 
     asyncio.run(exercise())

@@ -55,7 +55,7 @@ def completed_job(tmp_path, count=1):
     output = tmp_path / "output"
     config = tmp_path / "job.json"
     config.write_text(json.dumps(create_job(source, output, preset)))
-    run_job(config, True)
+    run_job(config, True, accept_uncertain_suitability=True)
     return source, output
 
 
@@ -160,3 +160,146 @@ def test_changed_settings_or_outputs_invalidate_acceptance(tmp_path):
     with pytest.raises(ValueError, match="changed"):
         cleanup(output, True, True)
     assert (source / "clip.mkv").exists()
+
+
+def test_quality_tradeoff_acceptance_is_explicit_and_separate_from_review(tmp_path):
+    source, output = completed_job(tmp_path)
+    assert inspect_acceptance(output)["eligible"] == []
+    record = record_acceptance(
+        output,
+        "quality-tradeoff",
+        "accept",
+        "User",
+        note="Accept smaller replacements without visual or editor inspection",
+    )
+    state = inspect_acceptance(output)
+    assert record["kind"] == "quality-tradeoff"
+    assert set(state["attestations"]) == {"quality-tradeoff"}
+    assert len(state["eligible"]) == 1
+    assert "quality-tradeoff" in (output / "archive-summary.html").read_text()
+    cleanup(output, False, False)
+    assert (source / "clip.mkv").exists()
+    with pytest.raises(ValueError, match="reviewed"):
+        cleanup(output, True, False)
+    assert (source / "clip.mkv").exists()
+    cleanup(output, True, True)
+    assert not (source / "clip.mkv").exists()
+    with pytest.raises(ValueError, match="acceptance"):
+        cleanup(output, True, True)
+
+
+@pytest.mark.parametrize("change", ["source", "output", "settings", "job", "failed", "missing"])
+def test_tradeoff_acceptance_cannot_bypass_changed_or_failed_outputs(tmp_path, change):
+    source, output = completed_job(tmp_path)
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept tradeoff")
+    path = output / "archive-manifest.json"
+    manifest = json.loads(path.read_text())
+    record = manifest["records"][0]
+    if change in ("source", "output"):
+        Path(record[change]).write_bytes(b"changed")
+    elif change == "settings":
+        record["settings"]["quality"] = 29
+    elif change == "job":
+        manifest["job"]["notes"] = "changed job"
+    elif change == "failed":
+        record["status"] = "failed"
+    else:
+        Path(record["output"]).unlink()
+    path.write_text(json.dumps(manifest))
+    with pytest.raises((ValueError, OSError)):
+        cleanup(output, True, True)
+    assert (source / "clip.mkv").exists()
+
+
+def test_tradeoff_preserves_reviews_and_blocks_preservation_gaps(tmp_path):
+    source, output = completed_job(tmp_path)
+    visual = record_acceptance(output, "visual", "accept", "User", note="Reviewed picture")
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept tradeoff")
+    assert inspect_acceptance(output)["attestations"]["visual"] == visual
+    (source / "clip.xmp").write_text("camera sidecar")
+    assert inspect_acceptance(output)["eligible"] == []
+    with pytest.raises(ValueError, match="keep originals"):
+        record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept tradeoff")
+    assert (source / "clip.mkv").exists()
+
+
+def test_later_review_rejection_requires_fresh_tradeoff_consent(tmp_path):
+    source, output = completed_job(tmp_path)
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept tradeoff")
+    record_acceptance(output, "visual", "reject", "User", note="Quality unacceptable")
+    assert inspect_acceptance(output)["eligible"] == []
+    with pytest.raises(ValueError, match="acceptance"):
+        cleanup(output, True, True)
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept observed loss")
+    assert len(inspect_acceptance(output)["eligible"]) == 1
+    assert (source / "clip.mkv").exists()
+
+
+def test_tradeoff_cannot_erase_declared_unmet_requirements(tmp_path):
+    source, output = completed_job(tmp_path)
+    record_acceptance(
+        output,
+        "visual",
+        "reject",
+        "User",
+        note="Missing metadata",
+        unmet_requirements=["camera metadata"],
+    )
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept quality loss")
+    assert inspect_acceptance(output)["eligible"] == []
+    with pytest.raises(ValueError, match="acceptance"):
+        cleanup(output, True, True)
+    assert (source / "clip.mkv").exists()
+
+
+def test_tradeoff_selective_cleanup_deletes_only_previewed_originals(tmp_path):
+    source, output = completed_job(tmp_path, 2)
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept tradeoff")
+    cleanup(output, True, True, selected_sources=[str(source / "second.mkv")])
+    assert (source / "clip.mkv").exists()
+    assert not (source / "second.mkv").exists()
+    assert len(inspect_acceptance(output)["eligible"]) == 0
+
+
+def test_cli_tradeoff_and_active_job_lock_never_delete_originals(tmp_path, monkeypatch):
+    from archivebench.cli import main
+
+    source, output = completed_job(tmp_path)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "archivebench",
+            "acceptance",
+            "record",
+            "--output",
+            str(output),
+            "--kind",
+            "quality-tradeoff",
+            "--decision",
+            "accept",
+            "--reviewer",
+            "User",
+            "--note",
+            "Accept quality tradeoff",
+        ],
+    )
+    main()
+    assert len(inspect_acceptance(output)["eligible"]) == 1
+    (output / ".lock").write_text("active job")
+    with pytest.raises(FileExistsError):
+        record_acceptance(output, "quality-tradeoff", "accept", "User", note="New consent")
+    with pytest.raises(FileExistsError):
+        cleanup(output, True, True)
+    assert (source / "clip.mkv").exists()
+
+
+def test_failed_original_is_retained_when_other_replacement_is_accepted(tmp_path):
+    source, output = completed_job(tmp_path, 2)
+    path = output / "archive-manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["records"][1]["status"] = "failed"
+    path.write_text(json.dumps(manifest))
+    record_acceptance(output, "quality-tradeoff", "accept", "User", note="Accept verified output")
+    cleanup(output, True, True)
+    assert not (source / "clip.mkv").exists()
+    assert (source / "second.mkv").exists()

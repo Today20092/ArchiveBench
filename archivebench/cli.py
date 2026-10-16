@@ -12,9 +12,9 @@ from .encoders import discover
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
-from .presets import inspect_preset, make_preset, resolve_settings
+from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .experiments import experiment_plan
-from .jobs import create_job, run_job
+from .jobs import create_job, discover_job, resume_destination, run_job
 from .review import inspect_review, launch_review, prepare_review, record_review, saved_reviews
 from .acceptance import inspect_acceptance, record_acceptance
 
@@ -249,12 +249,16 @@ def main() -> None:
     )
     clean.add_argument("--output", type=Path, required=True)
     clean.add_argument("--execute", action="store_true")
-    clean.add_argument("--reviewed", action="store_true")
+    clean.add_argument(
+        "--reviewed",
+        action="store_true",
+        help="Approve permanent deletion of the listed originals; job acceptance is separate",
+    )
     preset = commands.add_parser(
         "preset", help="Import, inspect or export portable archive presets"
     )
-    preset.add_argument("operation", choices=("import", "inspect", "export"))
-    preset.add_argument("document", type=Path)
+    preset.add_argument("operation", choices=("list", "import", "inspect", "export"))
+    preset.add_argument("document", type=Path, nargs="?")
     preset.add_argument("--output", type=Path)
     preset.add_argument("--name", default="")
     preset.add_argument("--description", default="")
@@ -271,6 +275,11 @@ def main() -> None:
         "--exceptions", type=Path, help="JSON list of explicit relative file exceptions"
     )
     job.add_argument("--execute", action="store_true")
+    job.add_argument(
+        "--accept-uncertain-suitability",
+        action="store_true",
+        help="Explicitly accept untested preset suitability for the preflighted job; no visual or deletion approval",
+    )
     review = commands.add_parser(
         "review", help="Launch exact native comparison or save user visual decisions"
     )
@@ -288,11 +297,11 @@ def main() -> None:
     review.add_argument("--objections", default="", help="Comma-separated sample-relative seconds")
     review.add_argument("--note", default="")
     acceptance = commands.add_parser(
-        "acceptance", help="Inspect job mapping or record actual visual/editor acceptance"
+        "acceptance", help="Inspect job mapping or record review/quality-tradeoff acceptance"
     )
     acceptance.add_argument("operation", choices=("inspect", "record"))
     acceptance.add_argument("--output", type=Path, required=True)
-    acceptance.add_argument("--kind", choices=("visual", "editor"))
+    acceptance.add_argument("--kind", choices=("visual", "editor", "quality-tradeoff"))
     acceptance.add_argument("--decision", choices=("accept", "reject"))
     acceptance.add_argument("--reviewer", default="")
     acceptance.add_argument("--editor", default="", help="Editor name and version")
@@ -356,11 +365,21 @@ def main() -> None:
                     if args.exceptions
                     else []
                 )
-                value = create_job(args.source, args.output, args.preset, exceptions)
+                value = resume_destination(
+                    create_job(args.source, args.output, args.preset, exceptions)
+                )
+                if discover_job(args.output) is not None:
+                    print(
+                        "Resuming destination's saved job; immutable settings and selection retained"
+                    )
                 save(args.config, value)
                 print(args.config)
             else:
-                run_job(args.config, args.execute if args.operation == "run" else False)
+                run_job(
+                    args.config,
+                    args.execute if args.operation == "run" else False,
+                    accept_uncertain_suitability=args.accept_uncertain_suitability,
+                )
         elif args.command == "review":
             directory = args.results.resolve().parent
             if args.results.name != "results.json":
@@ -390,6 +409,21 @@ def main() -> None:
                 write_report(json.loads(args.results.read_text(encoding="utf-8")), directory)
             print(json.dumps(value, indent=2))
         elif args.command == "preset":
+            if args.operation == "list":
+                print(
+                    json.dumps(
+                        [
+                            {"path": str(path), **json.loads(path.read_text(encoding="utf-8"))}
+                            for path in starter_paths()
+                        ],
+                        indent=2,
+                    )
+                )
+                return
+            if args.document is None:
+                raise ValueError(
+                    "Supply a preset document path; use preset list for built-in starters"
+                )
             document = json.loads(args.document.read_text(encoding="utf-8"))
             settings = resolve_settings(document)
             if args.operation == "inspect":

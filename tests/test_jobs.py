@@ -21,6 +21,46 @@ def settings():
     }
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg required")
+def test_job_preflight_rejects_silent_pixel_format_substitution(tmp_path):
+    source = tmp_path / "project"
+    source.mkdir()
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=24",
+            "-t",
+            "0.5",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv422p10le",
+            str(source / "clip.mkv"),
+        ]
+    )
+    preset = tmp_path / "preset.json"
+    preset.write_text(json.dumps({**settings(), "encoder": "libsvtav1"}))
+    plan = inspect_job(create_job(source, tmp_path / "output", preset))
+    assert plan["files"][0]["compatibility"] == "unsupported"
+    assert "bit depth/chroma" in str(plan["files"][0]["gaps"])
+    assert (
+        plan["alternative_selection"]
+        == "Select an alternative explicitly and preflight the new job; current job remains unchanged"
+    )
+    avc = next(
+        item for item in plan["alternatives"] if item["preset"]["settings"]["encoder"] == "libx264"
+    )
+    assert avc["compatibility"] == "short probes passed for all selected encodes"
+    assert avc["files"][0]["footage"]["pix_fmt"] == "yuv422p10le"
+    assert avc["estimates"]["status"] == "unknown"
+    assert plan["files"][0]["action"] == "keep-original"
+
+
 def test_job_snapshot_and_exception_boundaries(tmp_path):
     source = tmp_path / "project"
     source.mkdir()
@@ -86,12 +126,12 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         )
         config = tmp_path / (name + ".json")
         config.write_text(json.dumps(job))
-        plan = run_job(config)
+        plan = run_job(config, accept_uncertain_suitability=True)
         assert plan["files"][0]["settings"]["quality"] == 28
         assert plan["files"][0]["footage_scope"] == "untested"
         assert plan["files"][0]["sample_check"] == "recommended"
         if name == "first":
-            execute_process = subprocess.run
+            execute_process = subprocess.Popen
 
             def interrupt_encode(args, **kwargs):
                 if str(args[-1]).endswith(".partial.mkv"):
@@ -99,18 +139,26 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
                 return execute_process(args, **kwargs)
 
             with monkeypatch.context() as interrupted:
-                interrupted.setattr(subprocess, "run", interrupt_encode)
+                interrupted.setattr(subprocess, "Popen", interrupt_encode)
                 with pytest.raises(KeyboardInterrupt):
                     run_job(config, True)
             interrupted_manifest = json.loads(
                 (Path(job["output_root"]) / "archive-manifest.json").read_text()
             )
             assert interrupted_manifest["records"][0]["status"] == "pending"
+            summary = (Path(job["output_root"]) / "archive-summary.html").read_text()
+            assert "Last run: interrupted" in summary
+            assert "Unfinished: 2" in summary
+            assert "archive-job.json" in summary
             assert not (Path(job["output_root"]) / ".lock").exists()
         run_job(config, True)
         manifest_path = Path(job["output_root"]) / "archive-manifest.json"
         manifest = json.loads(manifest_path.read_text())
         assert {row["status"] for row in manifest["records"]} == {"verified", "keep_original"}
+        summary = (Path(job["output_root"]) / "archive-summary.html").read_text()
+        assert "Unfinished: 0" in summary
+        assert "Verified: 1" in summary and "Kept original: 1" in summary
+        assert "Net storage reclaimed after cleanup: 0 bytes" in summary
         archived = Path(manifest["records"][0]["output"])
         before = archived.stat().st_mtime_ns
         preset.write_text("{}")
@@ -122,7 +170,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         changed_job = {**job, "exceptions": [{"path": "keep.mov", "action": "keep-original"}]}
         config.write_text(json.dumps(changed_job))
         with pytest.raises(ValueError, match="another source/settings"):
-            run_job(config, True)
+            run_job(config, True, accept_uncertain_suitability=True)
         preset.write_text(json.dumps(settings()))
 
 
@@ -137,6 +185,8 @@ def test_preflight_preserves_unsupported_files(tmp_path):
     assert plan["files"][0]["action"] == "keep-original"
     assert plan["files"][0]["compatibility"] == "unsupported"
     assert plan["files"][0]["gaps"]
+    assert all(item["compatibility"] == "unsupported" for item in plan["alternatives"])
+    assert all(item["files"][0]["gaps"] for item in plan["alternatives"])
     assert not (tmp_path / "output").exists()
 
 
@@ -258,7 +308,7 @@ def test_unhelpful_archive_is_recorded_and_original_retained(tmp_path):
     job = create_job(source, tmp_path / "output", preset)
     config = tmp_path / "job.json"
     config.write_text(json.dumps(job))
-    run_job(config, True)
+    run_job(config, True, accept_uncertain_suitability=True)
     record = json.loads((tmp_path / "output/archive-manifest.json").read_text())["records"][0]
     assert record["status"] == "not_worth_encoding"
     assert clip.exists()

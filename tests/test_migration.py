@@ -139,7 +139,7 @@ def test_camera_container_selection_resume(
     assert plan["files"][0]["action"] == "encode", plan["files"][0]["gaps"]
     path = tmp_path / "job.json"
     save(path, job)
-    run_job(path, True)
+    run_job(path, True, accept_uncertain_suitability=True)
     manifest = Path(job["output_root"]) / "archive-manifest.json"
     result = json.loads(manifest.read_text())
     assert result["records"][0]["status"] == "verified"
@@ -152,9 +152,8 @@ def test_camera_container_selection_resume(
     assert output.stat().st_mtime_ns == before
     assert source.exists() and (root / "unselected.mov").exists()
     if container == "mov":
-        import importlib
+        import subprocess
 
-        engine = importlib.import_module("archivebench.archive")
         failed_job = selected_job(
             root,
             tmp_path / "continued",
@@ -165,15 +164,15 @@ def test_camera_container_selection_resume(
         failed_job["progress"] = False
         failed_path = tmp_path / "continued.json"
         save(failed_path, failed_job)
-        original_run = engine.run
+        original_popen = subprocess.Popen
 
-        def fail_one(args, timeout=120):
+        def fail_one(args, **kwargs):
             if str(args[-1]).endswith("camera.mov.archive.mov.partial.mov"):
-                raise RuntimeError("simulated individual encode failure")
-            return original_run(args, timeout)
+                args = [args[0], "-invalid-encode-option"]
+            return original_popen(args, **kwargs)
 
-        monkeypatch.setattr(engine, "run", fail_one)
-        run_job(failed_path, True)
+        monkeypatch.setattr(subprocess, "Popen", fail_one)
+        run_job(failed_path, True, accept_uncertain_suitability=True)
         records = json.loads((tmp_path / "continued" / "archive-manifest.json").read_text())[
             "records"
         ]

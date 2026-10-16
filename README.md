@@ -13,7 +13,7 @@ ArchiveBench tests short sections of your footage on your computer. Compare pict
 
 ## How it works
 
-There are two stages. First, run a benchmark to find settings you accept. Then use your saved presets to archive projects. You do not need another benchmark for every similar project.
+For first use, compare representative footage and save reusable settings, or choose a built-in starter for immediate archiving. Quality priority, Balanced and Space priority describe intentions, not measured quality guarantees. No benchmark is required to use a starter.
 
 Your hardware determines which encoders work and how fast they run. Your footage determines the measured quality and file size. Your visual review determines which changes you accept. ArchiveBench does not select a preset from your GPU name alone.
 
@@ -28,7 +28,7 @@ For example, save one higher-quality preset and one smaller preset. Keep both in
 
 ![Six steps: check the computer, choose footage, set the comparison, run the benchmark, review and save a preset, then archive future projects while keeping originals.](docs/diagrams/user-flow.svg)
 
-[Open the user-flow diagram](docs/diagrams/user-flow.html). Cleanup is a separate decision after visual review and verification.
+[Open the user-flow diagram](docs/diagrams/user-flow.html). Cleanup follows a finished job, mandatory verification, replacement acceptance and separate approval of the exact deletion preview.
 
 ## Start
 
@@ -94,7 +94,7 @@ Open `runs/first-test/report.html`. No server, internet connection or Node insta
 
 ### 6. Archive future projects
 
-Apply your saved preset through the [terminal UI](#open-the-terminal-ui) or an [archive job](#archive-future-projects). If footage or hardware differs from the preset's tested scope, check a short confirmation sample first. Keep originals until separate review and cleanup.
+Apply your saved preset through the [terminal UI](#open-the-terminal-ui) or an [archive job](#archive-future-projects). If footage or hardware differs from tested scope, optionally compare a short sample or explicitly accept uncertain suitability; technical incompatibility still blocks execution. Keep originals until separate review and cleanup.
 
 Want to see a report first? Download the [synthetic demo](https://github.com/Today20092/ArchiveBench/releases/download/v0.2.0/archivebench-synthetic-demo.zip), extract the whole ZIP and open `report.html`. Its synthetic measurements demonstrate the report and cannot select settings for your footage and hardware.
 
@@ -136,9 +136,11 @@ For a benchmark, rerun the same command to reuse completed measurements. Changed
 
 ## Archive future projects
 
+For immediate archiving, run `archivebench preset list`, export a listed starter with `archivebench preset export STARTER_PATH --output starter.json`, and use it in the job commands above. See [starter presets and job outcomes](docs/terminal-workflow.md#immediate-use-and-job-outcomes) for unmeasured limits, external destinations, offline summaries, resume and separate deletion approval. This archives selected footage, not the whole editing project.
+
 ### Open the terminal UI
 
-Once you have a saved preset, open the terminal UI:
+Open the terminal UI to choose a saved preset or a built-in starter:
 
 ```powershell
 archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
@@ -190,9 +192,9 @@ Select folders, clips or a mixture, then choose **Send to > Archive footage**. W
 
 The TUI proposes `Archived Footage` beneath the selected project or common source folder, or beside a directly selected `Original Footage` folder. Review the destination, especially when combining projects. Resume with `archivebench-tui --job "D:\Project\Archived Footage.job.json"`. Saved jobs retain their exact settings and selected files; use a different destination for a different preset version. See [installation and removal](docs/windows-send-to.md).
 
-Review replacements and reopen your editing-project copy before reclaiming space. Editor relinking and proprietary metadata need a separate compatibility check.
+Optionally review replacements and reopen a separate editing-project copy, or explicitly accept the preset's quality tradeoff without inspection. This does not establish editor compatibility or proprietary metadata preservation.
 
-**Cleanup permanently deletes originals.** It is a separate command after visual review, with hash, decode, stream and savings checks. Benchmarking does not authorize cleanup.
+**Cleanup permanently deletes originals.** After processing ends, it requires current identity-bound replacement acceptance and separate approval of the exact preview, with hash, decode, stream and savings checks. Benchmarking does not authorize cleanup.
 
 ## Use with Codex or Claude
 

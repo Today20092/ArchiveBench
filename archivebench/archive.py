@@ -22,6 +22,7 @@ from .core import (
 from .encoders import SPECS, options
 from .mux import validate_mux, suffix, mux_args, stream_gaps, timecode
 from .formats import output_video, retention, scale_filter, validate_formats
+from .job_summary import refresh_summary
 
 EXTENSIONS = {".mov", ".mp4", ".mkv", ".mxf", ".avi", ".mts", ".m2ts", ".webm", ".m4v"}
 
@@ -38,6 +39,22 @@ def safe(path: Path, root: Path | None = None) -> Path:
 
 
 def candidates(root: Path) -> list[Path]:
+    if "".join(c for c in root.name.lower() if c.isalnum()) in (
+        "archivedfootage",
+        "archives",
+        "proxy",
+        "proxies",
+    ) or any(
+        (ancestor / marker).exists()
+        for ancestor in (root, *root.parents)
+        for marker in (
+            "archive-manifest.json",
+            "archive-job.json",
+            ".archive-reencoder.json",
+            "results.json",
+        )
+    ):
+        return []
     found = []
     for folder, directories, files in os.walk(root, followlinks=False):
         directories[:] = [
@@ -47,6 +64,7 @@ def candidates(root: Path) -> list[Path]:
             not in ("proxy", "proxies", "archivedfootage", "archives", "git", "node_modules")
             and not Path(folder, name).is_symlink()
             and not (Path(folder, name) / "archive-manifest.json").exists()
+            and not (Path(folder, name) / "archive-job.json").exists()
             and not (Path(folder, name) / ".archive-reencoder.json").exists()
             and not (Path(folder, name) / "results.json").exists()
         ]
@@ -294,6 +312,12 @@ def archive(
     if not execute:
         print("Add --execute after reviewing this list to encode.")
         return
+    if job is not None:
+        from .jobs import suitability_decision
+
+        suitability = suitability_decision(job, plan or {"files": []})
+        if suitability["status"] == "acceptance-required":
+            raise ValueError("Accept uncertain preset suitability explicitly before encoding")
     output_root.mkdir(parents=True, exist_ok=True)
     manifest_path = output_root / "archive-manifest.json"
     manifest: dict[str, Any] = (
@@ -321,6 +345,20 @@ def archive(
     with lock.open("x") as stream:
         stream.write(str(os.getpid()))
     try:
+        if job is not None:
+            from .jobs import completed_deletions
+
+            completed_deletions(job)
+            manifest["suitability_acceptance"] = suitability
+        manifest["selected_sources"] = list(
+            dict.fromkeys([*manifest.get("selected_sources", []), *(str(path) for path in files)])
+        )
+        if job is not None:
+            local_job = output_root / "archive-job.json"
+            save(local_job, manifest["job"])
+            manifest["job_path"] = str(local_job)
+        manifest["last_run"] = "running"
+        save(manifest_path, manifest)
         for file_number, path in enumerate(files, 1):
             if stop_requested and stop_requested():
                 raise KeyboardInterrupt
@@ -356,6 +394,7 @@ def archive(
                             "status": "keep_original",
                             "output_hash": "",
                             "saving": 0.0,
+                            "source_bytes": path.stat().st_size,
                             "settings": settings,
                             "gaps": planned[str(path)]["gaps"],
                         }
@@ -363,6 +402,7 @@ def archive(
                     save(manifest_path, manifest)
                 continue
             if record:
+                record.setdefault("source_bytes", path.stat().st_size)
                 if original_hash != record["source_hash"]:
                     raise ValueError("Original changed since saved job")
                 if record["status"] in ("verified", "not_worth_encoding"):
@@ -382,6 +422,7 @@ def archive(
                     "status": "pending",
                     "output_hash": "",
                     "saving": 0.0,
+                    "source_bytes": path.stat().st_size,
                     **({"settings": settings} if job is not None else {}),
                 }
                 manifest["records"].append(record)
@@ -393,6 +434,14 @@ def archive(
             if gaps:
                 raise ValueError("; ".join(gaps))
             output.parent.mkdir(parents=True, exist_ok=True)
+
+            def check_storage() -> None:
+                if not source_root.is_dir() or not path.is_file() or not output_root.is_dir():
+                    raise OSError("Source or destination disconnected; stopping batch")
+                if shutil.disk_usage(output_root).free < 1024**3:
+                    raise OSError("Low disk space (less than 1 GiB free); stopping batch")
+
+            check_storage()
             if not output.exists():
                 temporary = safe(
                     output.with_name(output.name + ".partial." + settings.get("container", "mkv")),
@@ -454,12 +503,15 @@ def archive(
                 args += [*mux_args(settings, info), str(temporary)]
                 print(f"Encoding: {path.name}", flush=True)
                 try:
-                    if job and job.get("progress"):
-                        from .progress import encode_progress
+                    from .progress import encode_progress
 
-                        encode_progress(args, float(info["format"]["duration"]), stop_requested)
-                    else:
-                        run(args, 86400)
+                    encode_progress(
+                        args,
+                        float(info["format"]["duration"]),
+                        stop_requested,
+                        check_storage=check_storage,
+                        visible=bool(job and job.get("progress")),
+                    )
                     print("Verifying complete output...", flush=True)
                     verify_archive(temporary, path, settings, ffmpeg, ffprobe)
                 except (RuntimeError, ValueError) as error:
@@ -467,8 +519,7 @@ def archive(
                     save(manifest_path, manifest)
                     if not job or not job.get("continue_on_error"):
                         raise
-                    if shutil.disk_usage(output_root).free < 1024**3:
-                        raise OSError("Low disk space; stopping batch") from error
+                    check_storage()
                     print(f"Failed; original kept: {error}", flush=True)
                     continue
                 temporary.replace(output)
@@ -477,6 +528,8 @@ def archive(
             if digest(path) != original_hash:
                 raise ValueError("Source changed during encoding")
             record["saving"] = 1 - output.stat().st_size / path.stat().st_size
+            record["source_bytes"] = path.stat().st_size
+            record["output_bytes"] = output.stat().st_size
             record["output_hash"] = digest(output)
             record["status"] = "verified"
             if record["saving"] < settings.get("minimum_saving", 0.1):
@@ -485,8 +538,22 @@ def archive(
                 record["output_hash"] = ""
             save(manifest_path, manifest)
             print(f"{record['status']}: {record['saving']:.1%} saved")
+        manifest["last_run"] = "finished; inspect per-file outcomes"
+        save(manifest_path, manifest)
+    except (Exception, KeyboardInterrupt) as error:
+        manifest["last_run"] = (
+            "interrupted" if isinstance(error, KeyboardInterrupt) else f"stopped: {error}"
+        )
+        try:
+            save(manifest_path, manifest)
+        except OSError:
+            print("Could not save final run status; existing checkpoint retained.", flush=True)
+        raise
     finally:
-        lock.unlink(missing_ok=True)
+        try:
+            refresh_summary(output_root)
+        finally:
+            lock.unlink(missing_ok=True)
 
 
 def cleanup(
@@ -520,10 +587,12 @@ def cleanup(
         for gap in state["gaps"]:
             print(gap)
         if not execute:
-            print("Record job visual/editor acceptance, then separately use --execute --reviewed.")
+            print(
+                "Record job review or quality-tradeoff acceptance, then separately use --execute --reviewed."
+            )
             return
         if not reviewed or not state["eligible"]:
-            raise ValueError("Job cleanup requires current visual/editor acceptance and --reviewed")
+            raise ValueError("Job cleanup requires current replacement acceptance and --reviewed")
         lock = output_root / ".lock"
         with lock.open("x") as stream:
             stream.write(str(os.getpid()))
@@ -547,7 +616,10 @@ def cleanup(
                         record["status"] = "original_deleted"
                 save(path, manifest)
         finally:
-            lock.unlink(missing_ok=True)
+            try:
+                refresh_summary(output_root)
+            finally:
+                lock.unlink(missing_ok=True)
         return
     validate_settings(manifest["settings"])
     if selected_sources is not None:
@@ -597,4 +669,7 @@ def cleanup(
             record["status"] = "original_deleted"
             save(path, manifest)
     finally:
-        lock.unlink(missing_ok=True)
+        try:
+            refresh_summary(output_root)
+        finally:
+            lock.unlink(missing_ok=True)
