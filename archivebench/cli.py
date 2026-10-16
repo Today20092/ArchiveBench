@@ -249,7 +249,11 @@ def main() -> None:
     )
     clean.add_argument("--output", type=Path, required=True)
     clean.add_argument("--execute", action="store_true")
-    clean.add_argument("--reviewed", action="store_true")
+    clean.add_argument(
+        "--reviewed",
+        action="store_true",
+        help="Approve permanent deletion of the listed originals; job acceptance is separate",
+    )
     preset = commands.add_parser(
         "preset", help="Import, inspect or export portable archive presets"
     )
@@ -288,11 +292,11 @@ def main() -> None:
     review.add_argument("--objections", default="", help="Comma-separated sample-relative seconds")
     review.add_argument("--note", default="")
     acceptance = commands.add_parser(
-        "acceptance", help="Inspect job mapping or record actual visual/editor acceptance"
+        "acceptance", help="Inspect job mapping or record review/quality-tradeoff acceptance"
     )
     acceptance.add_argument("operation", choices=("inspect", "record"))
     acceptance.add_argument("--output", type=Path, required=True)
-    acceptance.add_argument("--kind", choices=("visual", "editor"))
+    acceptance.add_argument("--kind", choices=("visual", "editor", "quality-tradeoff"))
     acceptance.add_argument("--decision", choices=("accept", "reject"))
     acceptance.add_argument("--reviewer", default="")
     acceptance.add_argument("--editor", default="", help="Editor name and version")
