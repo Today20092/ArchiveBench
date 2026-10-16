@@ -33,10 +33,16 @@ Use these prompts in a Codex discovery test. In Claude Code, replace `$archivebe
 | $archivebench Compare HEVC and AV1 for my completed wedding project. | Activate; locate tools, inspect source characteristics, propose a bounded experiment. |
 | $archivebench Can I reuse my podcast archive preset for this noisy concert? | Activate; inspect preset scope and suggest a short confirmation comparison. |
 | $archivebench Archive this completed project; I can leave it encoding overnight. | Activate; treat overnight as patience, review settings and job scope before encoding. |
-| $archivebench Delete originals from the archive I just made. | Activate; inspect verified replacements, visual/editor acceptance and cleanup authorization. |
+| $archivebench Delete originals from the archive I just made. | Activate; inspect the finished job, verified identities, replacement acceptance (actual review or explicit quality tradeoff) and separate cleanup authorization. |
 | Compare HEVC and AV1 for my completed wedding project. | Do not load the skill automatically; invocation is explicit in this revision. |
 | ZIP this folder for email. | Do not activate; this is file packaging. |
 | Export a small social-media delivery video. | Do not activate; this is delivery rather than camera-media replacement. |
 | Compress these JPEG images. | Do not activate; this is image compression. |
 
 Historical delivery checks, before the explicit-invocation policy change, discovered the packaged skill in Codex CLI 0.154.0 outside the repository and ran two folder jobs through the installed terminal command. Initial model attempts failed on the inherited model; invocation-local selection of the client's advertised default then demonstrated implicit activation, bounded comparisons, preset export and job planning. These checks do not verify the new invocation policy. Scratch permission failures and the baseline timeout remain recorded. See [delivery evidence](delivery-evaluation.md) for exact scope; no other client or universal comparative benefit is claimed.
+
+## Synthetic archive walkthrough
+
+Use temporary generated footage, never personal footage, for this check. Generate a short SDR constant-frame-rate FFV1 clip with FFmpeg, list built-in presets, export a listed starter, create a job with a separate destination, inspect it and execute it using [the terminal workflow](terminal-workflow.md#immediate-use-and-job-outcomes). Confirm the starter has unknown measurements and inspect `archive-summary.html` with its manifest after the run. Rerun the same job and confirm verified files are reused. The job summary tests cover persisted interrupted selection and unfinished outcomes; a completed rerun alone does not demonstrate interruption recovery.
+
+Record a quality-tradeoff acceptance using the synthetic fixture only, then run cleanup without `--execute`. Check that the exact verified original appears in the preview and still exists. This walkthrough requires no deletion. Test actual visual/editor acceptance only when a person performed those checks; synthetic encode success supplies neither review nor real-camera quality evidence. A measured preset from the fixed-comparison demo can use the same job path; its historical measurements remain distinct from current-job verification.
