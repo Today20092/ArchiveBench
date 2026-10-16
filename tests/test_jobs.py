@@ -106,11 +106,19 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
                 (Path(job["output_root"]) / "archive-manifest.json").read_text()
             )
             assert interrupted_manifest["records"][0]["status"] == "pending"
+            summary = (Path(job["output_root"]) / "archive-summary.html").read_text()
+            assert "Last run: interrupted" in summary
+            assert "Unfinished: 2" in summary
+            assert config.name in summary
             assert not (Path(job["output_root"]) / ".lock").exists()
         run_job(config, True)
         manifest_path = Path(job["output_root"]) / "archive-manifest.json"
         manifest = json.loads(manifest_path.read_text())
         assert {row["status"] for row in manifest["records"]} == {"verified", "keep_original"}
+        summary = (Path(job["output_root"]) / "archive-summary.html").read_text()
+        assert "Unfinished: 0" in summary
+        assert "Verified: 1" in summary and "Kept original: 1" in summary
+        assert "Net storage reclaimed after cleanup: 0 bytes" in summary
         archived = Path(manifest["records"][0]["output"])
         before = archived.stat().st_mtime_ns
         preset.write_text("{}")
