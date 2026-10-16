@@ -22,6 +22,7 @@ from .core import (
 from .encoders import SPECS, options
 from .mux import validate_mux, suffix, mux_args, stream_gaps, timecode
 from .formats import output_video, retention, scale_filter, validate_formats
+from .job_summary import refresh_summary
 
 EXTENSIONS = {".mov", ".mp4", ".mkv", ".mxf", ".avi", ".mts", ".m2ts", ".webm", ".m4v"}
 
@@ -321,6 +322,13 @@ def archive(
     with lock.open("x") as stream:
         stream.write(str(os.getpid()))
     try:
+        manifest["selected_sources"] = list(
+            dict.fromkeys([*manifest.get("selected_sources", []), *(str(path) for path in files)])
+        )
+        if job is not None:
+            manifest["job_path"] = str(settings_path.resolve())
+        manifest["last_run"] = "running"
+        save(manifest_path, manifest)
         for file_number, path in enumerate(files, 1):
             if stop_requested and stop_requested():
                 raise KeyboardInterrupt
@@ -356,6 +364,7 @@ def archive(
                             "status": "keep_original",
                             "output_hash": "",
                             "saving": 0.0,
+                            "source_bytes": path.stat().st_size,
                             "settings": settings,
                             "gaps": planned[str(path)]["gaps"],
                         }
@@ -363,6 +372,7 @@ def archive(
                     save(manifest_path, manifest)
                 continue
             if record:
+                record.setdefault("source_bytes", path.stat().st_size)
                 if original_hash != record["source_hash"]:
                     raise ValueError("Original changed since saved job")
                 if record["status"] in ("verified", "not_worth_encoding"):
@@ -382,6 +392,7 @@ def archive(
                     "status": "pending",
                     "output_hash": "",
                     "saving": 0.0,
+                    "source_bytes": path.stat().st_size,
                     **({"settings": settings} if job is not None else {}),
                 }
                 manifest["records"].append(record)
@@ -477,6 +488,8 @@ def archive(
             if digest(path) != original_hash:
                 raise ValueError("Source changed during encoding")
             record["saving"] = 1 - output.stat().st_size / path.stat().st_size
+            record["source_bytes"] = path.stat().st_size
+            record["output_bytes"] = output.stat().st_size
             record["output_hash"] = digest(output)
             record["status"] = "verified"
             if record["saving"] < settings.get("minimum_saving", 0.1):
@@ -485,8 +498,22 @@ def archive(
                 record["output_hash"] = ""
             save(manifest_path, manifest)
             print(f"{record['status']}: {record['saving']:.1%} saved")
+        manifest["last_run"] = "finished; inspect per-file outcomes"
+        save(manifest_path, manifest)
+    except (Exception, KeyboardInterrupt) as error:
+        manifest["last_run"] = (
+            "interrupted" if isinstance(error, KeyboardInterrupt) else f"stopped: {error}"
+        )
+        try:
+            save(manifest_path, manifest)
+        except OSError:
+            print("Could not save final run status; existing checkpoint retained.", flush=True)
+        raise
     finally:
-        lock.unlink(missing_ok=True)
+        try:
+            refresh_summary(output_root)
+        finally:
+            lock.unlink(missing_ok=True)
 
 
 def cleanup(
@@ -547,7 +574,10 @@ def cleanup(
                         record["status"] = "original_deleted"
                 save(path, manifest)
         finally:
-            lock.unlink(missing_ok=True)
+            try:
+                refresh_summary(output_root)
+            finally:
+                lock.unlink(missing_ok=True)
         return
     validate_settings(manifest["settings"])
     if selected_sources is not None:
@@ -597,4 +627,7 @@ def cleanup(
             record["status"] = "original_deleted"
             save(path, manifest)
     finally:
-        lock.unlink(missing_ok=True)
+        try:
+            refresh_summary(output_root)
+        finally:
+            lock.unlink(missing_ok=True)
