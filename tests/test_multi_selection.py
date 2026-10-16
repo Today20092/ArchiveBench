@@ -156,3 +156,80 @@ def test_multi_folder_encode_and_resume(tmp_path):
     run_job(job_path, True)
     assert timestamps == {p: Path(p).stat().st_mtime_ns for p in timestamps}
     assert all((folder / "same.mkv").exists() for folder in folders)
+
+
+def test_destination_discovers_saved_job_and_rejects_conflicts(tmp_path):
+    import pytest
+    from archivebench.jobs import discover_job
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "clip.mov").write_bytes(b"original")
+    preset = tmp_path / "preset.json"
+    save(
+        preset,
+        make_preset(
+            {
+                "version": 2,
+                "type": "archive-settings",
+                "encoder": "libx264",
+                "quality": 24,
+                "pixel_format": "source",
+            }
+        ),
+    )
+    output = tmp_path / "output"
+    job = selected_job(source, output, preset, ["clip.mov"], {})
+    assert discover_job(output) is None
+    save(
+        output / "archive-manifest.json",
+        {"job": job, "source_root": str(source), "output_root": str(output)},
+    )
+    assert discover_job(output) == job
+    assert selected_job(source, output, preset, ["clip.mov"], {}) == job
+    with pytest.raises(ValueError, match="settings.*another destination"):
+        selected_job(source, output, preset, ["clip.mov"], {"quality": 30})
+    (source / "second.mov").write_bytes(b"original")
+    with pytest.raises(ValueError, match="selection.*another destination"):
+        selected_job(source, output, preset, ["clip.mov", "second.mov"], {})
+
+
+def test_selected_archive_roots_are_excluded(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    original = source / "clip.mov"
+    original.touch()
+    generated = source / "delivery"
+    generated.mkdir()
+    (generated / "old.mov").touch()
+    save(generated / "archive-manifest.json", {})
+    root, _, rows = selection_defaults([source, generated])
+    assert root == source
+    assert rows == [(original, True)]
+    assert selection_defaults([generated])[2] == []
+
+
+def test_destination_discovers_preexecution_job_and_legacy_selection(tmp_path):
+    from archivebench.jobs import create_job, discover_job
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "clip.mov").touch()
+    preset = tmp_path / "preset.json"
+    save(
+        preset,
+        make_preset(
+            {
+                "version": 2,
+                "type": "archive-settings",
+                "encoder": "libx264",
+                "quality": 24,
+                "pixel_format": "source",
+            }
+        ),
+    )
+    output = tmp_path / "output"
+    saved = create_job(source, output, preset)
+    save(tmp_path / "output.job.json", saved)
+    assert discover_job(output) == saved
+    assert selected_job(source, output, preset, ["clip.mov"], {}) == saved

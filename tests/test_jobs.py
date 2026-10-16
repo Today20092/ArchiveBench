@@ -120,7 +120,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
         assert plan["files"][0]["footage_scope"] == "untested"
         assert plan["files"][0]["sample_check"] == "recommended"
         if name == "first":
-            execute_process = subprocess.run
+            execute_process = subprocess.Popen
 
             def interrupt_encode(args, **kwargs):
                 if str(args[-1]).endswith(".partial.mkv"):
@@ -128,7 +128,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
                 return execute_process(args, **kwargs)
 
             with monkeypatch.context() as interrupted:
-                interrupted.setattr(subprocess, "run", interrupt_encode)
+                interrupted.setattr(subprocess, "Popen", interrupt_encode)
                 with pytest.raises(KeyboardInterrupt):
                     run_job(config, True)
             interrupted_manifest = json.loads(
@@ -138,7 +138,7 @@ def test_two_projects_resume_and_changed_media(tmp_path, monkeypatch):
             summary = (Path(job["output_root"]) / "archive-summary.html").read_text()
             assert "Last run: interrupted" in summary
             assert "Unfinished: 2" in summary
-            assert config.name in summary
+            assert "archive-job.json" in summary
             assert not (Path(job["output_root"]) / ".lock").exists()
         run_job(config, True)
         manifest_path = Path(job["output_root"]) / "archive-manifest.json"
