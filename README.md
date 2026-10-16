@@ -15,6 +15,10 @@ The current development focus is the terminal UI, `archivebench-tui`. Select fol
 
 ## Open the terminal UI
 
+![ArchiveBench Settings showing example CPU and GPU presets, the selected preset, destination folder and audio policy.](docs/images/tui-settings.png)
+
+The development TUI on 2026-10-16, captured with synthetic clips and illustrative presets. These presets are not recommendations. See [Clips, Settings and Review examples](docs/terminal-ui.md#screenshots) for the full walkthrough.
+
 From a checkout containing the current changes:
 
 ```powershell
