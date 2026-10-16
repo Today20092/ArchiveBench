@@ -29,6 +29,8 @@ def test_tui_starters_available_without_saved_presets(tmp_path):
             assert "CRF 20" in details
             assert "-preset medium" in details
             assert "Match source" in details
+            assert "yuv420p is a template placeholder" in details
+            assert "Actual pixel format matches each source clip" in details
             assert app.query_one("#audio", Select).value == "copy"
             assert not (tmp_path / "empty-library").exists()
 

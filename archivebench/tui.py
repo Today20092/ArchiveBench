@@ -417,7 +417,12 @@ class ArchiveApp(App):
                 self.query_one("#preset-details", Static).update(
                     f"{preset_description(settings)}\nEncoder: {settings['encoder']}\n"
                     "Source frame rate retained. Audio policy is selected below.\n"
-                    "Encoder controls (source pixel format resolved per clip):\n"
+                    + (
+                        "Actual pixel format matches each source clip; incompatible formats are rejected.\n"
+                        "Stored encoder controls below: yuv420p is a template placeholder.\n"
+                        if settings["pixel_format"] == "source"
+                        else "Encoder controls:\n"
+                    )
                     + " ".join(document.get("encoder_options", []))
                 )
             except (OSError, ValueError) as error:
