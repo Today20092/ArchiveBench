@@ -125,9 +125,13 @@ def generate_review_media(
 
     for trial in result["trials"]:
         if not any(
-            candidate.get("evidence_status") == "validated"
+            (
+                candidate.get("evidence_status") == "validated"
+                or candidate in result.get("review_candidates", [])
+            )
             and all(candidate[key] == trial.get(key) for key in ("variant", "encoder", "quality"))
             for candidate in result.get("validation_shortlist", [])
+            + result.get("review_candidates", [])
         ):
             continue
         sample = next(s for s in result["samples"] if s["id"] == trial["sample"])
@@ -178,9 +182,22 @@ def generate_review_media(
                 "path": exact.relative_to(root).as_posix(),
                 "sha256": trial["sha256"],
             }
-            assets["original"] = preview(
-                reference, bounded(folder / "original.mp4"), sample["video"]
-            )
+            shared = sample.get("review_original", {})
+            if (
+                shared.get("reference_sha256") == identity["sha256"]
+                and safe_asset_path(shared.get("asset", {}).get("path"))
+                and bounded(root / shared["asset"]["path"]).is_file()
+                and hash_file(bounded(root / shared["asset"]["path"])) == shared["asset"]["sha256"]
+            ):
+                assets["original"] = shared["asset"]
+            else:
+                assets["original"] = preview(
+                    reference, bounded(folder / "original.mp4"), sample["video"]
+                )
+                sample["review_original"] = {
+                    "reference_sha256": identity["sha256"],
+                    "asset": assets["original"],
+                }
             assets["encoded"] = preview(source, bounded(folder / "encoded.mp4"), sample["video"])
             assets.update(
                 status="available",

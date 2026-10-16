@@ -2,9 +2,11 @@
 
 import json
 import os
+import shutil
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
+from collections.abc import Callable
 
 from .core import (
     color_args,
@@ -18,6 +20,7 @@ from .core import (
     validate_output,
 )
 from .encoders import SPECS, options
+from .mux import validate_mux, suffix, mux_args, stream_gaps, timecode
 from .formats import output_video, retention, scale_filter, validate_formats
 
 EXTENSIONS = {".mov", ".mp4", ".mkv", ".mxf", ".avi", ".mts", ".m2ts", ".webm", ".m4v"}
@@ -44,6 +47,7 @@ def candidates(root: Path) -> list[Path]:
             not in ("proxy", "proxies", "archivedfootage", "archives", "git", "node_modules")
             and not Path(folder, name).is_symlink()
             and not (Path(folder, name) / "archive-manifest.json").exists()
+            and not (Path(folder, name) / ".archive-reencoder.json").exists()
             and not (Path(folder, name) / "results.json").exists()
         ]
         for name in sorted(files):
@@ -67,6 +71,7 @@ def validate_settings(settings: dict[str, Any]) -> None:
     if settings.get("encoder") not in SPECS:
         raise ValueError("Unsupported archive format")
     validate_formats(settings)
+    validate_mux(settings)
     options(
         settings["encoder"],
         int(settings["quality"]),
@@ -91,10 +96,15 @@ def verify_retention(
     output: Path,
     policy: dict[str, Any],
     ffmpeg: str,
+    settings: dict[str, Any] | None = None,
 ) -> None:
     def tags(src: dict[str, Any], dst: dict[str, Any]) -> None:
         # Muxers regenerate duration/encoder and bitrate statistics, not user metadata.
         ignored = {"encoder", "duration", "bps", "number_of_frames", "number_of_bytes"}
+        if settings and settings.get("container", "mkv") != "mkv":
+            ignored.update({"major_brand", "minor_version", "compatible_brands", "vendor_id"})
+        if settings and settings.get("timecode_mode") == "drop":
+            ignored.add("timecode")
         actual = {k.lower(): v for k, v in dst.get("tags", {}).items()}
         for key, value in src.get("tags", {}).items():
             if key.lower() in ignored or key.lower().startswith("_statistics_"):
@@ -184,26 +194,30 @@ def verify_archive(
     # Existing v1 jobs predate metadata checks; preserve their cleanup contract.
     if settings["version"] == 1:
         policy = {**policy, "metadata": "drop"}
-    verify_retention(original, encoded, source, output, policy, ffmpeg)
+    verify_retention(original, encoded, source, output, policy, ffmpeg, settings)
+    if settings.get("timecode_mode") == "preserve" and timecode(original) != timecode(encoded):
+        raise ValueError("Archive timecode mismatch")
 
     def count(path: Path) -> int:
         return int(
-            run(
-                [
-                    ffprobe,
-                    "-v",
-                    "error",
-                    "-count_frames",
-                    "-select_streams",
-                    "v:0",
-                    "-show_entries",
-                    "stream=nb_read_frames",
-                    "-of",
-                    "default=nw=1:nk=1",
-                    str(path),
-                ],
-                86400,
-            ).strip()
+            json.loads(
+                run(
+                    [
+                        ffprobe,
+                        "-v",
+                        "error",
+                        "-count_frames",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=nb_read_frames",
+                        "-of",
+                        "json",
+                        str(path),
+                    ],
+                    86400,
+                )
+            )["streams"][0]["nb_read_frames"]
         )
 
     if count(output) != count(source):
@@ -239,6 +253,7 @@ def archive(
     *,
     job: dict[str, Any] | None = None,
     plan: dict[str, Any] | None = None,
+    stop_requested: Callable[[], bool] | None = None,
 ) -> None:
     source_root, output_root = safe(source_root), safe(output_root)
     if (
@@ -254,6 +269,9 @@ def archive(
     )
     validate_settings(settings)
     files = [path for path in candidates(source_root) if not path.is_relative_to(output_root)]
+    if job is not None and "selected_files" in job:
+        selected = {p.casefold() for p in job["selected_files"]}
+        files = [p for p in files if p.relative_to(source_root).as_posix().casefold() in selected]
     planned = {row["source"]: row for row in (plan or {}).get("files", [])}
     if job is not None and set(planned) != {str(path) for path in files}:
         raise ValueError("Job preflight does not match current source selection")
@@ -266,7 +284,7 @@ def archive(
             {
                 "pixel_format": settings["pixel_format"],
                 "resolution": settings.get("resolution", "original"),
-                "container": "MKV",
+                "container": settings.get("container", "mkv"),
                 **policy,
             }
         )
@@ -303,11 +321,16 @@ def archive(
     with lock.open("x") as stream:
         stream.write(str(os.getpid()))
     try:
-        for path in files:
+        for file_number, path in enumerate(files, 1):
+            if stop_requested and stop_requested():
+                raise KeyboardInterrupt
+            print(f"File {file_number}/{len(files)}: {path.name}", flush=True)
             settings = planned[str(path)]["settings"] if job is not None else manifest["settings"]
             policy = retention(settings) if settings is not None else {}
             output = safe(
-                output_root / (str(path.relative_to(source_root)) + ".archive.mkv"), output_root
+                output_root
+                / (str(path.relative_to(source_root)) + suffix(settings or manifest["settings"])),
+                output_root,
             )
             record = next((r for r in manifest["records"] if r["source"] == str(path)), None)
             original_hash = digest(path)
@@ -366,17 +389,15 @@ def archive(
             info = probe(path, ffprobe)
             video = inspect_source(path, 0, min(1, float(info["format"]["duration"])), ffprobe)
             target = output_video(video, settings)
-            if any(
-                s["codec_type"] not in ("video", "audio", "subtitle", "attachment")
-                or s.get("disposition", {}).get("attached_pic")
-                for s in info["streams"]
-            ):
-                raise ValueError(
-                    "Data/unknown streams or cover art need a tested preservation path; refusing to omit them"
-                )
+            gaps = stream_gaps(info, settings)
+            if gaps:
+                raise ValueError("; ".join(gaps))
             output.parent.mkdir(parents=True, exist_ok=True)
             if not output.exists():
-                temporary = safe(output.with_name(output.name + ".partial.mkv"), output_root)
+                temporary = safe(
+                    output.with_name(output.name + ".partial." + settings.get("container", "mkv")),
+                    output_root,
+                )
                 args = [
                     ffmpeg,
                     "-hide_banner",
@@ -430,10 +451,26 @@ def archive(
                             f"-b:a:{i}",
                             f"{stream['channels'] * policy['audio_kbps_per_channel']}k",
                         ]
-                args += ["-f", "matroska", str(temporary)]
+                args += [*mux_args(settings, info), str(temporary)]
                 print(f"Encoding: {path.name}", flush=True)
-                run(args, 86400)
-                verify_archive(temporary, path, settings, ffmpeg, ffprobe)
+                try:
+                    if job and job.get("progress"):
+                        from .progress import encode_progress
+
+                        encode_progress(args, float(info["format"]["duration"]), stop_requested)
+                    else:
+                        run(args, 86400)
+                    print("Verifying complete output...", flush=True)
+                    verify_archive(temporary, path, settings, ffmpeg, ffprobe)
+                except (RuntimeError, ValueError) as error:
+                    record.update(status="failed", error=str(error))
+                    save(manifest_path, manifest)
+                    if not job or not job.get("continue_on_error"):
+                        raise
+                    if shutil.disk_usage(output_root).free < 1024**3:
+                        raise OSError("Low disk space; stopping batch") from error
+                    print(f"Failed; original kept: {error}", flush=True)
+                    continue
                 temporary.replace(output)
             else:
                 verify_archive(output, path, settings, ffmpeg, ffprobe)
@@ -458,6 +495,7 @@ def cleanup(
     reviewed: bool,
     ffmpeg: str = "ffmpeg",
     ffprobe: str = "ffprobe",
+    selected_sources: list[str] | None = None,
 ) -> None:
     output_root = safe(output_root)
     path = safe(output_root / "archive-manifest.json", output_root)
@@ -466,6 +504,14 @@ def cleanup(
         from .acceptance import inspect_acceptance
 
         state = inspect_acceptance(output_root, ffmpeg, ffprobe)
+        if selected_sources is not None:
+            allowed = {item["source"] for item in state["eligible"]}
+            if (
+                not selected_sources
+                or len(set(selected_sources)) != len(selected_sources)
+                or not set(selected_sources).issubset(allowed)
+            ):
+                raise ValueError("Select only currently accepted verified originals")
         print(
             f"Cleanup review: {len(state['eligible'])} accepted replacements. Deletion is permanent."
         )
@@ -493,6 +539,8 @@ def cleanup(
                 ):
                     raise ValueError("Files changed during cleanup checks")
             for item in current["eligible"]:
+                if selected_sources is not None and item["source"] not in selected_sources:
+                    continue
                 Path(item["source"]).unlink()
                 for record in manifest["records"]:
                     if record["source"] == item["source"]:
@@ -502,6 +550,8 @@ def cleanup(
             lock.unlink(missing_ok=True)
         return
     validate_settings(manifest["settings"])
+    if selected_sources is not None:
+        raise ValueError("Selective cleanup requires an ArchiveBench job")
     if manifest["version"] != 1 or manifest["output_root"] != str(output_root):
         raise ValueError("Invalid cleanup manifest")
     source_root = safe(Path(manifest["source_root"]))
@@ -524,7 +574,9 @@ def cleanup(
         for record in records:
             source = safe(Path(record["source"]), source_root)
             output = safe(Path(record["output"]), output_root)
-            expected = output_root / (str(source.relative_to(source_root)) + ".archive.mkv")
+            expected = output_root / (
+                str(source.relative_to(source_root)) + suffix(manifest["settings"])
+            )
             if (
                 output != expected
                 or digest(source) != record["source_hash"]

@@ -1,5 +1,9 @@
 # Experiment configuration
 
+## Default: fixed settings within a wall-clock allowance
+
+New `setup` defaults to `strategy: "fixed"`. See [quick comparison](quick-comparison.md) for five-second sections, explicit `fixed_settings`, selected/all encoders, work estimates, measured starting presets and hardware threading. `budget_minutes` includes initialization/scoring/review for this strategy. It does not tune quality or claim fresh validation. `setup --strategy tune` opts into the target-search behavior described below. Configurations without `strategy` retain legacy tuning semantics and cache identity.
+
 `archivebench setup` now proposes a bounded **initial** comparison: at most two selected clips, one explicit format variant, up to three named encoders and four quality targets. Its default candidate list is CPU HEVC (`libx265`), CPU AV1 (`libsvtav1`) and GPU HEVC (`hevc_nvenc`); actual compatibility checks may fail. It never substitutes a supported format silently. Use `archivebench setup --comparison comprehensive` for wider coverage, and enter `all` at the encoder prompt to test every installed configured adapter.
 
 The saved `comparison` field is `initial` or `comprehensive`. Older configs without it retain comprehensive behavior. Initial configs require explicit encoders and retain all selected clips and quality targets; over-wide requests are rejected with instructions to choose comprehensive. `initial_trial_limit` defaults to 12 and accepts 1..24 tuning attempts, including failed or interrupted attempts. Search quotas reserve work for other encoders/scenes; the total cap also covers shared-setting measurements across clips. Successful identical settings reuse cached evidence. A low cap can leave targets unmet or coverage incomplete; expanding requires an edited config and a new output folder. Fresh validation is separate, at most two shortlisted settings per target/variant on each saved validation section; shared choices are deduplicated.

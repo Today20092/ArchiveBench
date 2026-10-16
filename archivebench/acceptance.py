@@ -10,15 +10,21 @@ from .archive import safe, verify_archive
 from .core import digest, fingerprint, probe, save
 from .presets import resolve_settings
 from .formats import retention
+from .mux import suffix
 
 
-def preservation_gaps(source: Path, info: dict[str, Any]) -> list[str]:
+def preservation_gaps(
+    source: Path, info: dict[str, Any], settings: dict[str, Any] | None = None
+) -> list[str]:
     gaps = []
     tags = [
         info.get("format", {}).get("tags", {}),
         *(stream.get("tags", {}) for stream in info.get("streams", [])),
     ]
-    if any("timecode" in key.casefold() for group in tags for key in group):
+    if (
+        any("timecode" in key.casefold() for group in tags for key in group)
+        and (settings or {}).get("timecode_mode", "reject") == "reject"
+    ):
         gaps.append("Timecode requires a tested preservation/relink path; keep original")
     sidecars = [
         path.name
@@ -70,11 +76,13 @@ def inspect_acceptance(
         source = safe(Path(record["source"]), source_root)
         output = safe(Path(record["output"]), root)
         relative = source.relative_to(source_root).as_posix()
+        if "selected_files" in job and relative not in job["selected_files"]:
+            raise ValueError("Record is outside the saved file selection")
         exception = exceptions.get(relative.casefold(), {})
         settings = resolve_settings(exception.get("preset", job["preset"]))
         if exception.get("action") == "keep-original" or record.get("settings") != settings:
             raise ValueError("Record settings differ from saved job/exception")
-        if relative.casefold() in seen or output != root / (relative + ".archive.mkv"):
+        if relative.casefold() in seen or output != root / (relative + suffix(settings)):
             raise ValueError("Duplicate record or mapping mismatch")
         seen.add(relative.casefold())
         if digest(source) != record["source_hash"] or digest(output) != record["output_hash"]:
@@ -82,7 +90,7 @@ def inspect_acceptance(
         if 1 - output.stat().st_size / source.stat().st_size < settings.get("minimum_saving", 0.1):
             raise ValueError("Insufficient actual savings")
         verify_archive(output, source, settings, ffmpeg, ffprobe)
-        gaps.extend(preservation_gaps(source, probe(source, ffprobe)))
+        gaps.extend(preservation_gaps(source, probe(source, ffprobe), settings))
         mapping.append(
             {
                 "source": str(source),

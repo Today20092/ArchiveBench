@@ -2,6 +2,8 @@
 
 ## Guided intake before encoding
 
+Default to [fixed-setting quick comparison](quick-comparison.md): selected/all encoders, five-second sections, one repeat, and a user-selected total wall-clock allowance (suggest 30 minutes). VMAF is an observed result. Present the exact fixed settings, format choices and queue before execution. The first scene compares encoders before extra scenes; additional-scene work checks its measured frontier. Offer starting presets with explicit measured scope and visual review, without representing them as fresh-validated recommendations. Use `setup --strategy tune` only when the user requests refinement or exact-quality searches; the tuning-specific steps below still apply to those experiments. A paused experiment must not restart merely because implementation or documentation is updated.
+
 Help the user define the comparison before running it. Reuse answers and authorization already supplied in the conversation. Ask only unresolved choices, in small groups, with plain-language options and a suggested starting point. Inspect files and tools while waiting for answers that do not affect those read-only checks.
 
 Work through these topics in order; adapt the questions to the user's goal rather than sending the whole table as a questionnaire.

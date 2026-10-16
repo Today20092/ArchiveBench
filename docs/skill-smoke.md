@@ -4,7 +4,7 @@ This walkthrough verifies packaging and local execution on Windows. It does not 
 
 ## Fresh installation outside a checkout
 
-Build a wheel with `uv build`. Create a temporary Python 3.11 environment with `uv venv --python 3.11 TEMP_ENV`, then install the wheel using `uv pip install --python TEMP_ENV/Scripts/python.exe dist/archivebench-0.1.0-py3-none-any.whl`.
+Build a wheel with `uv build`. Create a temporary Python 3.11 environment with `uv venv --python 3.11 TEMP_ENV`, then install the wheel using `uv pip install --python TEMP_ENV/Scripts/python.exe dist/archivebench-0.2.0-py3-none-any.whl`.
 
 From an unrelated working directory, run:
 

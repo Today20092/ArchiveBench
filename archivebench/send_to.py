@@ -10,6 +10,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Install Windows Send to > ArchiveBench")
     parser.add_argument("--install", action="store_true", required=True)
     parser.add_argument("--preset-directory", type=Path)
+    parser.add_argument("--terminal", choices=("conhost", "wezterm"), default="conhost")
     args = parser.parse_args()
     if os.name != "nt":
         parser.error("Send to is available on Windows only")
@@ -18,6 +19,8 @@ def main() -> None:
         "-NoProfile",
         "-File",
         str(Path(__file__).parent / "windows" / "install-send-to.ps1"),
+        "-Terminal",
+        args.terminal,
     ]
     if args.preset_directory:
         command += ["-PresetDirectory", str(args.preset_directory.resolve())]

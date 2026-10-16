@@ -19,6 +19,15 @@ Separate current visual and editor reopening attestations for verified archive o
 
 ## Language
 
+**Fixed comparison**:
+A bounded experiment that encodes explicit settings without searching for a quality target. It measures quality, space and encoding time on short selected sections.
+
+**Measured starting point**:
+An exportable preset supported by the listed short measurements. It does not imply fresh validation, visual acceptance or suitability for untested footage.
+
+**Wall-clock allowance**:
+The user-selected time available for a fixed comparison, including preparation, measurements and report/review work. Unfinished work remains explicit; final writes and process cleanup may cause a small recorded overrun.
+
 **Quality levels**:
 A saved list of VMAF targets for comparing measured storage, quality and encoding time. Targets share identical measurements; each target's recommendation must meet its own threshold on all tuning and fresh validation sections. Scores are not percentages of original quality.
 

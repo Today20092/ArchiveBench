@@ -6,10 +6,10 @@ Select folders, clips or a mixture in Explorer, then choose **Send to > Archive 
 
 ## Install or update
 
-The current TUI workflow is unreleased. Use a checkout containing these changes; the historical v0.1.0 wheel does not supply the current interface. Finish running ArchiveBench jobs before replacing the installed tool:
+The TUI workflow is included in v0.2.0. Finish running ArchiveBench jobs before installing or replacing the tool:
 
 ```powershell
-uv tool install --python 3.11 --force .
+uv tool install --python 3.11 --force https://github.com/Today20092/ArchiveBench/releases/download/v0.2.0/archivebench-0.2.0-py3-none-any.whl
 uv tool update-shell
 ```
 

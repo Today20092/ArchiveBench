@@ -16,6 +16,13 @@ from .encoders import SPECS
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
+    for item in value.get("work", []):
+        if "reason" in item:
+            item["reason"] = (
+                "See local results.json for details"
+                if re.search(r"[A-Za-z]:[\\/]|(?:^|[\s'\"\[])/", item["reason"])
+                else item["reason"].splitlines()[0][:160]
+            )
     for trial in value["trials"] + value.get("screening", []):
         trial.pop("output", None)
         if trial.get("encoder") in SPECS and "pixel_format" in trial:
@@ -107,6 +114,34 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         else ""
     )
     template = template.replace("<footer>", decisions + "<footer>")
+    if result["config"].get("strategy") == "fixed":
+        rows = "".join(
+            "<tr>"
+            + "".join(
+                "<td>" + escape(str(value)) + "</td>"
+                for value in (
+                    item["sample"],
+                    item["variant"],
+                    item["encoder"],
+                    item["quality"],
+                    item["status"],
+                    f"{item['estimated_seconds']:.0f} s (estimate)"
+                    if item.get("estimated_seconds") is not None
+                    else "Unknown until measured",
+                )
+            )
+            + "</tr>"
+            for item in result.get("work", [])
+        )
+        work = (
+            '<section class="section"><h2>Fixed comparison work and time</h2><p>'
+            + escape(result.get("budget_scope", ""))
+            + f". Allowance: {result['config']['budget_minutes']} minutes. Elapsed: {result.get('session_seconds', 0):.1f} seconds."
+            + '</p><p>Estimates use measured work on the same encoder and format. Additional scenes and preparation can differ. Not selected means outside the first-scene frontier, not tested or failed quality.</p><div class="table-wrap"><table><thead><tr><th>Scene</th><th>Format</th><th>Encoder</th><th>Quality</th><th>Status</th><th>Additional work estimate</th></tr></thead><tbody>'
+            + rows
+            + "</tbody></table></div></section>"
+        )
+        template = template.replace("<footer>", work + "<footer>")
     script = (assets / "report.js").read_text(encoding="utf-8").replace("</script", "<\\/script")
     report = directory / "report.html"
     report.write_text(
@@ -138,7 +173,9 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "",
         f"Status: {result['status']}",
         f"Fresh-footage validation: {result.get('validation_status', 'provisional, no reviewed holdouts')}",
-        f"Quality targets: {quality_targets(result['config'])}",
+        "Quality: observed fixed settings; no target search"
+        if result["config"].get("strategy") == "fixed"
+        else f"Quality targets: {quality_targets(result['config'])}",
         f"Measured encodes per setting: {result['config'].get('encode_repeats', 1)}",
         "Format variants: "
         + "; ".join(

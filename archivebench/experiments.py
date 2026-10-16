@@ -7,7 +7,80 @@ from .formats import format_variants
 from .validation import quality_targets
 
 
+def fixed_settings(config: dict[str, Any]) -> dict[str, list[int]]:
+    encoders = config.get("encoders", ["libx265", "libsvtav1", "hevc_nvenc"]) or list(SPECS)
+    if (
+        not isinstance(encoders, list)
+        or any(not isinstance(e, str) for e in encoders)
+        or len(set(encoders)) != len(encoders)
+    ):
+        raise ValueError("encoders must be a list of unique encoder names")
+    supplied = config.get("fixed_settings", {})
+    if not isinstance(supplied, dict) or set(supplied) - set(encoders):
+        raise ValueError("fixed_settings must map selected encoders to quality lists")
+    settings = {}
+    for name in encoders:
+        if name not in SPECS:
+            raise ValueError(f"Unsupported encoder config: {name}")
+        _, initial, low, high, _ = SPECS[name]
+        values = supplied.get(
+            name,
+            [
+                initial,
+                max(low, initial - 6) if name.endswith("_videotoolbox") else min(high, initial + 6),
+            ],
+        )
+        if (
+            not isinstance(values, list)
+            or not values
+            or len(values) > 8
+            or any(type(q) is not int or not low <= q <= high for q in values)
+            or len(set(values)) != len(values)
+        ):
+            raise ValueError(
+                f"fixed_settings for {name} requires 1..8 unique integers in {low}..{high}"
+            )
+        settings[name] = values
+    return settings
+
+
 def experiment_plan(config: dict[str, Any]) -> dict[str, Any]:
+    strategy = config.get("strategy", "tune")
+    if strategy not in ("fixed", "tune"):
+        raise ValueError("strategy must be fixed or tune")
+    if strategy == "fixed":
+        settings = fixed_settings(config)
+        variants = format_variants(config)
+        count = len(config["samples"]) * len(variants) * sum(map(len, settings.values()))
+        return {
+            "strategy": "fixed",
+            "comparison": "fixed",
+            "mode": config["mode"],
+            "encoders": [
+                {
+                    "encoder": name,
+                    "codec": SPECS[name][0],
+                    "controls": SPECS[name][4],
+                    "qualities": values,
+                }
+                for name, values in settings.items()
+            ],
+            "samples": config["samples"],
+            "variants": variants,
+            "quality_targets": [],
+            "encode_repeats": config.get("encode_repeats", 1),
+            "budget_minutes": config["budget_minutes"],
+            "bounds": {
+                "screens": 0,
+                "tuning_attempts": 0,
+                "validation_attempts": 0,
+                "measured_encodes": count * config.get("encode_repeats", 1),
+            },
+            "estimate": {
+                "seconds": None,
+                "note": "First full short sample measures compatibility, speed and quality together. Remaining estimates update from measured encode/scoring/preparation times. Budget includes initialization and reserves report/review time; cleanup and final writes may slightly overrun. No target search or separate pilots. Additional scenes check the first-scene measured frontier.",
+            },
+        }
     comparison = config.get("comparison", "comprehensive")
     if comparison not in ("initial", "comprehensive"):
         raise ValueError("comparison must be initial or comprehensive")

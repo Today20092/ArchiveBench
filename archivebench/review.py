@@ -4,6 +4,8 @@ import json
 import math
 import shutil
 import subprocess
+import time
+import os
 from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
@@ -19,6 +21,55 @@ CAVEATS = (
     "Default display is 8-bit; requesting 10-bit does not verify monitor/driver fidelity. "
     "Browser previews are converted 8-bit aids. Audio needs separate review; video-compare is silent."
 )
+
+
+def prepare_review(directory: Path, trial_id: str, seconds: float = 120) -> dict[str, Any]:
+    """Prepare one selected trial without repeating benchmark measurements."""
+    from .budget import deadline
+    from .media import generate_review_media
+    from .stills import generate_stills
+    from .report import write_report
+
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("Review allowance must be positive and finite")
+    root = directory.resolve()
+    lock = root / ".lock"
+    with lock.open("x") as stream:
+        stream.write(str(os.getpid()))
+    started = time.monotonic()
+    end = started + seconds
+    token = deadline.set(end)
+    try:
+        inspect_review(root, trial_id)
+        result = json.loads((root / "results.json").read_text(encoding="utf-8"))
+        trial = next(t for t in result["trials"] if t["id"] == trial_id)
+        selected = {
+            **result,
+            "trials": [trial],
+            "validation_shortlist": [],
+            "review_candidates": [{k: trial[k] for k in ("variant", "encoder", "quality")}],
+        }
+
+        def remaining() -> float:
+            return max(0, end - time.monotonic())
+
+        generate_stills(selected, root, remaining)
+        generate_review_media(selected, root, remaining)
+        elapsed = time.monotonic() - started
+        result.setdefault("review_sessions", []).append({"trial": trial_id, "seconds": elapsed})
+        save(root / "results.json", result)
+        deadline.set(None)
+        write_report(result, root)
+        return {
+            "trial": trial_id,
+            "seconds": elapsed,
+            "stills": trial.get("review_stills", {}).get("status", "incomplete"),
+            "media": trial.get("review_media", {}).get("status", "unavailable"),
+            "report": str(root / "report.html"),
+        }
+    finally:
+        deadline.reset(token)
+        lock.unlink(missing_ok=True)
 
 
 def inspect_review(directory: Path, trial_id: str) -> dict[str, Any]:

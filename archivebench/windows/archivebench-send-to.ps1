@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $exitCode = 0
 try {
+    Start-Transcript -Path (Join-Path $PSScriptRoot 'terminal-last-launch.log') -Force -ErrorAction SilentlyContinue | Out-Null
     $command = Get-Command archivebench -CommandType Application -ErrorAction Stop | Select-Object -First 1
     function Invoke-ArchiveBench([string[]]$ArchiveArguments) {
         & $command.Source @ArchiveArguments
@@ -27,7 +28,7 @@ try {
         Write-Host "Archive folder: $source"
         for ($i = 0; $i -lt $choices.Count; $i++) { Write-Host "$($i + 1). $($choices[$i].BaseName)" }
         $selection = Read-Host 'Choose preset number (blank cancels)'
-        if ([string]::IsNullOrWhiteSpace($selection)) { exit 0 }
+        if ([string]::IsNullOrWhiteSpace($selection)) { return }
         $number = 0
         if (-not [int]::TryParse($selection, [ref]$number) -or $number -lt 1 -or $number -gt $choices.Count) {
             throw 'Choose a listed preset number.'
@@ -60,6 +61,9 @@ try {
 } catch {
     Write-Error $_ -ErrorAction Continue
     $exitCode = 1
+} finally {
+    Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
 }
-if (-not $InspectOnly -and -not $NoPause) { Read-Host 'Press Enter to close' | Out-Null }
-exit $exitCode
+if (-not $InspectOnly -and -not $NoPause) { Read-Host 'Press Enter to finish; close this window when done' | Out-Null }
+if ($InspectOnly -or $NoPause) { exit $exitCode }
+# The Explorer shortcut uses -NoExit; do not terminate its host on an error.

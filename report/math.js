@@ -23,6 +23,7 @@ export function validationTarget(result, row) {
 }
 
 export function evidenceStatus(result, row) {
+  if (result.config.strategy === 'fixed') return 'measured starting point';
   const selected = result.validation_shortlist?.some(candidate => candidate.variant === (row.variant ?? 'legacy') && candidate.encoder === row.encoder && candidate.quality === row.quality);
   if (!selected) return 'provisional';
   const required = result.config.validation_samples ?? [];

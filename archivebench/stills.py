@@ -20,6 +20,9 @@ def generate_stills(
         for c in result.get("validation_shortlist", [])
         if c.get("evidence_status") == "validated"
     }
+    finalists.update(
+        (c["variant"], c["encoder"], c["quality"]) for c in result.get("review_candidates", [])
+    )
     root = directory.resolve()
     for trial in result["trials"]:
         if (trial.get("variant"), trial["encoder"], trial["quality"]) not in finalists:

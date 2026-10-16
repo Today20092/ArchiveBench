@@ -1,6 +1,6 @@
 # Running and interpreting a benchmark
 
-For the current development workflow, start with a [fixed comparison](quick-comparison.md). It measures saved settings within your time allowance and exports measured starting presets. The target-tuning sections below describe the optional search for settings at specific quality targets.
+Start with a [fixed comparison](quick-comparison.md). It measures saved settings within your time allowance and exports measured starting presets. Select encoders independently from the time allowance. The target-tuning sections below describe the optional search for settings at specific quality targets.
 
 [Back to the README](../README.md) · [Configuration](configuration.md) · [Archiving](archiving.md)
 

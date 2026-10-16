@@ -8,3 +8,6 @@ runs/
 local-config*.json
 *.log
 dist/
+.scratch/
+.archify/
+.codex-remote-attachments/

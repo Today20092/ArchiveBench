@@ -13,14 +13,10 @@ The current package depends on Textual for its terminal UI; uv installs the Pyth
 
 ## Install the command
 
-For the current TUI and Send to workflow, use [a source checkout](#install-a-source-checkout) containing the unreleased changes. The download below is for the historical release.
-
-Install the wheel from the initial GitHub release:
-
-That URL is the historical release. The skill/preset/job workflow in this revision is not published there yet. For these capabilities use the current source checkout, or build a local wheel with `uv build`, then `uv tool install --python 3.11 dist/archivebench-0.1.0-py3-none-any.whl`. Version 0.1.0 alone does not identify an unreleased revision: retain its source commit and wheel hash. This implementation has not published a new release.
+Install the v0.2.0 wheel from [GitHub Releases](https://github.com/Today20092/ArchiveBench/releases/tag/v0.2.0). It includes the terminal UI, Send to installer, fixed comparisons, archive jobs and optional agent skill.
 
 ```powershell
-uv tool install --python 3.11 https://github.com/Today20092/ArchiveBench/releases/download/v0.1.0/archivebench-0.1.0-py3-none-any.whl
+uv tool install --python 3.11 https://github.com/Today20092/ArchiveBench/releases/download/v0.2.0/archivebench-0.2.0-py3-none-any.whl
 uv tool update-shell
 ```
 
@@ -29,10 +25,13 @@ Open a new terminal so the executable directory is on PATH, then run:
 ```powershell
 archivebench doctor
 archivebench setup --config local-config.json
+archivebench plan local-config.json
 archivebench benchmark local-config.json --output runs/first-test
 ```
 
-Review the saved configuration before benchmarking, including the proposed fresh validation sections. Open `runs/first-test/report.html` when the command finishes. Keep its companion folder beside it for optional review media.
+Review the saved configuration before benchmarking. The default fixed comparison uses saved settings; advanced target tuning also reserves fresh validation sections. Open `runs/first-test/report.html` when the command finishes. Keep its companion folder beside it for optional review media.
+
+To replace an older installation, finish any running jobs, then run the install command with `--force`. Keep presets and job files. Refresh [Windows Send to shortcuts](windows-send-to.md) separately after upgrading. Release assets include SHA-256 checksums for the wheel, source distribution and synthetic demo.
 
 Without installing a persistent command, use `uv tool run --from` with the same wheel URL and `archivebench` followed by a subcommand. This project is distributed through GitHub Releases; these commands do not assume a PyPI release.
 
@@ -57,7 +56,7 @@ If you already have presets, open the interactive archive workflow directly:
 uv run archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
 ```
 
-Omit the source path to start with an empty selection. See [the TUI guide](terminal-ui.md). To install persistent commands from this checkout, finish any running jobs, then run `uv tool install --python 3.11 --force .` and `uv tool update-shell`. Follow [Windows Send to](windows-send-to.md) to add or refresh the Explorer shortcuts. A fresh clone contains committed changes only; local uncommitted additions are not included until published.
+Omit the source path to start with an empty selection. See [the TUI guide](terminal-ui.md). To install persistent commands from this checkout, finish any running jobs, then run `uv tool install --python 3.11 --force .` and `uv tool update-shell`. Follow [Windows Send to](windows-send-to.md) to add or refresh the Explorer shortcuts.
 
 ## Check the environment
 
@@ -138,7 +137,7 @@ For a global installation, use `npx skills remove archivebench --global`. Select
 
 ### Install the skill bundled with ArchiveBench
 
-Wheels built from this revision include the portable `archivebench` skill and all its references. Earlier published wheels may predate the installer; use the source-checkout route until a release containing it is available. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
+The v0.2.0 wheel includes the portable `archivebench` skill and all its references. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
 
 ```powershell
 archivebench-skill --destination PATH_TO_CLIENT_SKILLS

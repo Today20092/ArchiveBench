@@ -88,8 +88,12 @@ def test_installer_uses_durable_shortcut_and_rejects_multiple_sources(tmp_path):
     install = tmp_path / "Installed launcher"
     sendto = tmp_path / "Send to"
     presets = tmp_path / "Presets & %literal%"
+    sendto.mkdir()
+    for old in ("ArchiveBench", "ArchiveBench Desktop", "ArchiveBench Cleanup"):
+        (sendto / f"{old}.lnk").write_text("obsolete")
     result = powershell(
         WINDOWS / "install-send-to.ps1",
+        "-Legacy",
         "-InstallDirectory",
         install,
         "-SendToDirectory",
@@ -98,15 +102,20 @@ def test_installer_uses_durable_shortcut_and_rejects_multiple_sources(tmp_path):
         presets,
     )
     assert result.returncode == 0, result.stderr
+    assert not list(sendto.glob("ArchiveBench*.lnk"))
     assert (install / "archivebench-send-to.ps1").read_bytes() == (
         WINDOWS / "archivebench-send-to.ps1"
     ).read_bytes()
-    assert (sendto / "ArchiveBench.lnk").is_file()
+    for name in ("Archive footage", "Archive footage (terminal)", "Review originals for deletion"):
+        assert (sendto / f"{name}.lnk").is_file()
     # Read the real shortcut through Windows COM without launching a UI.
-    command = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ARCHIVEBENCH_TEST_SHORTCUT); $s.Arguments"
+    command = "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ARCHIVEBENCH_TEST_SHORTCUT); $s.TargetPath; $s.Arguments"
     inspection = subprocess.run(
         ["powershell.exe", "-NoProfile", "-Command", command],
-        env={**os.environ, "ARCHIVEBENCH_TEST_SHORTCUT": str(sendto / "ArchiveBench.lnk")},
+        env={
+            **os.environ,
+            "ARCHIVEBENCH_TEST_SHORTCUT": str(sendto / "Archive footage (terminal).lnk"),
+        },
         capture_output=True,
         text=True,
         timeout=10,
@@ -114,5 +123,109 @@ def test_installer_uses_durable_shortcut_and_rejects_multiple_sources(tmp_path):
     assert inspection.returncode == 0, inspection.stderr
     assert str(install / "archivebench-send-to.ps1") in inspection.stdout
     assert str(presets) in inspection.stdout
+    assert "-NoExit" in inspection.stdout
+    assert "conhost.exe" in inspection.stdout
+    assert "powershell.exe" in inspection.stdout
     rejected = powershell(install / "archivebench-send-to.ps1", tmp_path, presets, "-InspectOnly")
     assert rejected.returncode != 0 and "exactly one" in rejected.stderr
+
+
+@pytest.mark.parametrize("script", ["archivebench-send-to.ps1", "archivebench-desktop.ps1"])
+def test_interactive_errors_do_not_terminate_powershell(script):
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            "& $env:ARCHIVEBENCH_TEST_SCRIPT; Write-Output 'HOST_STILL_OPEN'",
+        ],
+        env={**os.environ, "ARCHIVEBENCH_TEST_SCRIPT": str(WINDOWS / script)},
+        input="\n",
+        text=True,
+        capture_output=True,
+        timeout=15,
+    )
+    assert "exactly one" in result.stderr
+    assert "HOST_STILL_OPEN" in result.stdout
+
+
+@pytest.mark.parametrize("cleanup", [False, True])
+def test_desktop_wrapper_routes_folder_and_cleanup(tmp_path, cleanup):
+    fake = tmp_path / "archivebench-desktop.cmd"
+    fake.write_text("@echo off\necho ROUTED %*\nexit /b 0\n")
+    source = tmp_path / "Project with spaces"
+    source.mkdir()
+    extra = tmp_path / "another clip.mov"
+    extra.touch()
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-File",
+            str(WINDOWS / "archivebench-desktop.ps1"),
+            "-Root",
+            str(source),
+            "-PresetDirectory",
+            str(tmp_path),
+            *([] if cleanup else [str(extra)]),
+            *(["-Cleanup"] if cleanup else []),
+        ],
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ROUTED --root" in result.stdout
+    assert str(source) in result.stdout
+    assert "--preset-directory" in result.stdout
+    assert ("--cleanup" in result.stdout) == cleanup
+    if not cleanup:
+        assert str(extra) in result.stdout
+
+
+@pytest.mark.parametrize("terminal", ["conhost", "wezterm"])
+def test_tui_shortcuts_do_not_launch_powershell(tmp_path, terminal):
+    import sys
+
+    if terminal == "wezterm" and not shutil.which("wezterm-gui.exe"):
+        pytest.skip("WezTerm not installed")
+
+    exe = Path(sys.executable).parent / "archivebench-tui.exe"
+    assert exe.is_file()
+    sendto = tmp_path / "Send to"
+    result = powershell(
+        WINDOWS / "install-send-to.ps1",
+        "-InstallDirectory",
+        tmp_path / "install",
+        "-SendToDirectory",
+        sendto,
+        "-PresetDirectory",
+        tmp_path / "presets",
+        "-TuiExecutable",
+        exe,
+        *(["-Terminal", terminal] if terminal == "wezterm" else []),
+    )
+    assert result.returncode == 0, result.stderr
+    for name in ("Archive footage", "Archive footage (terminal)"):
+        inspection = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:TEST_LINK); $s.TargetPath; $s.Arguments",
+            ],
+            env={**os.environ, "TEST_LINK": str(sendto / f"{name}.lnk")},
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert inspection.returncode == 0
+        assert ("conhost.exe" if terminal == "conhost" else "wezterm-gui.exe") in inspection.stdout
+        assert str(exe) in inspection.stdout
+        assert (
+            "--fit-window" if terminal == "conhost" else "--always-new-process"
+        ) in inspection.stdout
+        assert "powershell" not in inspection.stdout.lower()
+        assert "--config-file" not in inspection.stdout
+        assert "archivebench-wezterm.lua" not in inspection.stdout

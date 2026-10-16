@@ -4,6 +4,8 @@ import copy
 import json
 import math
 import shutil
+import subprocess
+from collections.abc import Callable
 from contextlib import contextmanager
 from fractions import Fraction
 from uuid import uuid4
@@ -11,10 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from .archive import archive, candidates, safe
-from .core import color_args, primary, probe, run
+from .core import color_args, inspect_source, probe, run
 from .encoders import options
 from .formats import output_video, retention, scale_filter
 from .presets import inspect_preset, make_preset, resolve_settings
+from .mux import suffix, mux_args, stream_gaps
 
 
 @contextmanager
@@ -52,6 +55,20 @@ def validate_job(job: dict[str, Any]) -> None:
     ):
         raise ValueError("Job roots, preset and exceptions are required")
     resolve_settings(job["preset"])
+    if "selected_files" in job:
+        selected = job["selected_files"]
+        if (
+            not isinstance(selected, list)
+            or not selected
+            or any(not isinstance(p, str) for p in selected)
+        ):
+            raise ValueError("Select at least one relative file")
+        paths = [relative_path(p).casefold() for p in selected]
+        if len(set(paths)) != len(paths):
+            raise ValueError("Duplicate selected file")
+    for key in ("continue_on_error", "progress"):
+        if key in job and type(job[key]) is not bool:
+            raise ValueError(f"{key} must be boolean")
     seen = set()
     for item in job.get("exceptions", []):
         if (
@@ -76,6 +93,9 @@ def validate_job(job: dict[str, Any]) -> None:
                     ("pixel_format", None),
                     ("resolution", "original"),
                     ("minimum_saving", 0.1),
+                    ("container", "mkv"),
+                    ("data_mode", "reject"),
+                    ("timecode_mode", "reject"),
                 )
             ) or retention(base) != retention(override):
                 raise ValueError(
@@ -156,7 +176,13 @@ def inspect_job(
         relative_path(item["path"]).casefold(): item for item in job.get("exceptions", [])
     }
     rows, destinations, used = [], set(), set()
-    for path in candidates(source):
+    available = candidates(source)
+    if "selected_files" in job:
+        chosen = {relative_path(p).casefold() for p in job["selected_files"]}
+        if not chosen.issubset({p.relative_to(source).as_posix().casefold() for p in available}):
+            raise ValueError("Selected file missing or excluded")
+        available = [p for p in available if p.relative_to(source).as_posix().casefold() in chosen]
+    for path in available:
         if path.is_relative_to(output):
             continue
         relative = path.relative_to(source).as_posix()
@@ -164,7 +190,7 @@ def inspect_job(
         if item:
             used.add(relative.casefold())
         settings = resolve_settings(item.get("preset", job["preset"]))
-        destination = safe(output / (relative + ".archive.mkv"), output)
+        destination = safe(output / (relative + suffix(settings)), output)
         if str(destination).casefold() in destinations:
             raise ValueError("Archive destination collision")
         destinations.add(str(destination).casefold())
@@ -185,20 +211,22 @@ def inspect_job(
                 info = probe(path, ffprobe)
                 from .acceptance import preservation_gaps
 
-                gaps = preservation_gaps(path, info)
+                gaps = preservation_gaps(path, info, settings)
                 if gaps:
                     raise ValueError("; ".join(gaps))
-                if any(
-                    stream["codec_type"] not in ("video", "audio", "subtitle", "attachment")
-                    or stream.get("disposition", {}).get("attached_pic")
-                    for stream in info["streams"]
-                ):
-                    raise ValueError(
-                        "Data/unknown streams or cover art require a tested preservation path"
+                gaps = stream_gaps(info, settings)
+                if gaps:
+                    raise ValueError("; ".join(gaps))
+                if (
+                    sum(
+                        stream["codec_type"] == "video"
+                        and not stream.get("disposition", {}).get("attached_pic")
+                        for stream in info["streams"]
                     )
-                if sum(stream["codec_type"] == "video" for stream in info["streams"]) != 1:
+                    != 1
+                ):
                     raise ValueError("Multiple video streams require a tested preservation path")
-                video = primary(info)
+                video = inspect_source(path, 0, min(1, float(info["format"]["duration"])), ffprobe)
                 characteristics = {
                     key: video[key]
                     for key in (
@@ -253,9 +281,8 @@ def inspect_job(
                         "0.1",
                         "-frames:v",
                         "1",
-                        "-f",
-                        "matroska",
-                        str(Path(scratch) / "probe.mkv"),
+                        *mux_args(settings, info),
+                        str(Path(scratch) / ("probe." + settings.get("container", "mkv"))),
                     ]
                     run(args, 30)
                 row["compatibility"] = (
@@ -283,7 +310,7 @@ def inspect_job(
                         "exclusions": ["retained streams", "verification", "untested footage"],
                         "coverage": evidence.get("coverage", []),
                     }
-            except (ValueError, RuntimeError) as error:
+            except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
                 row.update(
                     action="keep-original",
                     output=None,
@@ -320,7 +347,11 @@ def inspect_job(
 
 
 def run_job(
-    job_path: Path, execute: bool = False, ffmpeg: str = "ffmpeg", ffprobe: str = "ffprobe"
+    job_path: Path,
+    execute: bool = False,
+    ffmpeg: str = "ffmpeg",
+    ffprobe: str = "ffprobe",
+    stop_requested: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     job = json.loads(job_path.read_text(encoding="utf-8"))
     print(
@@ -328,6 +359,8 @@ def run_job(
         flush=True,
     )
     plan = inspect_job(job, ffprobe, ffmpeg)
+    if stop_requested and stop_requested():
+        raise KeyboardInterrupt
     print(json.dumps(plan, indent=2))
     if execute:
         archive(
@@ -339,5 +372,6 @@ def run_job(
             ffprobe,
             job=job,
             plan=plan,
+            stop_requested=stop_requested,
         )
     return plan
