@@ -1,6 +1,7 @@
 ---
 name: archivebench
-description: Compare video archive encodes on local footage, review quality versus storage and time, and apply measured settings to completed projects. Use when choosing archive codecs, reusing archive presets, or replacing camera media with smaller editable copies.
+description: Compare video archive encodes, choose archive presets, and apply saved settings to completed projects.
+disable-model-invocation: true
 license: MIT
 ---
 

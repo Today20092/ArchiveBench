@@ -199,7 +199,25 @@ Review replacements and reopen your editing-project copy before reclaiming space
 
 ## Use with Codex or Claude
 
-Install the [portable skill](docs/installation.md#install-the-optional-agent-skill) into your client's discovery directory. It guides bounded comparisons, preset reuse, visual decisions and jobs using the same CLI as [terminal users](docs/terminal-workflow.md). A capable agent without the skill can also invoke those tools: the skill supplies procedure, while measurements and verification live in the shared engine. The [agent prompt](docs/AGENT-PROMPT.md) remains a checkout alternative. [AGENTS.md](AGENTS.md) supplies maintenance rules.
+Use the optional skill when you want help choosing presets or interpreting results. Once you have presets, the CLI and terminal UI can archive future projects without the skill.
+
+For occasional use, generate a prompt without installing the skill:
+
+```powershell
+npx skills use Today20092/ArchiveBench@archivebench
+```
+
+Paste the generated prompt into your local agent session, then describe your footage and goal. Add `--agent codex` to start Codex directly, or `--agent claude-code` for Claude Code. Node/npm and the selected agent must be installed separately. ArchiveBench and FFmpeg are still required for encoding.
+
+To keep the skill in the current project:
+
+```powershell
+npx skills add Today20092/ArchiveBench --skill archivebench
+```
+
+Choose your agent when prompted. Add `--global` only if you want the skill available across projects. This revision makes the installed skill explicitly invoked in Codex and Claude Code. Use `$archivebench` in Codex or `/archivebench` in Claude Code when you need it.
+
+See [skill installation and removal](docs/installation.md#install-the-optional-agent-skill) for details. The [agent prompt](docs/AGENT-PROMPT.md) is a checkout alternative. [AGENTS.md](AGENTS.md) supplies maintenance rules.
 
 ## Why I made it
 

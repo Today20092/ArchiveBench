@@ -90,7 +90,53 @@ For the benchmark, saved `ffmpeg` and `ffprobe` fields can select explicit execu
 
 For preset-based archiving through Explorer, see the optional [Windows Send to installer](windows-send-to.md). It uses the same installed CLI and keeps originals.
 
-Named-client check: Codex CLI 0.154.0 discovered this wheel's shipped skill in an unrelated project's `.agents/skills/` through `skills/list`. Example: `archivebench-skill --destination .agents/skills` from your project. Initial model execution failed on the inherited account/model combination; the client's advertised default then performed bounded synthetic tasks with implicit skill activation. Discovery alone is not execution proof. Other clients remain unverified. See [delivery evidence](delivery-evaluation.md).
+The skill is optional. Use it to get help choosing presets, reviewing measurements or planning an archive job. Once you have presets, use the CLI or terminal UI directly for similar projects. A global skill installation is not required.
+
+### Use once without installing
+
+With Node/npm installed, run:
+
+```powershell
+npx skills use Today20092/ArchiveBench@archivebench
+```
+
+This downloads the skill and its references to a temporary directory and prints a prompt. Paste the prompt into your local agent session, then describe the footage and what you want to do. It does not install the skill in your project or user skill directory.
+
+To start a new interactive Codex session with that prompt instead:
+
+```powershell
+npx skills use Today20092/ArchiveBench@archivebench --agent codex
+```
+
+For Claude Code, replace `codex` with `claude-code`. The selected agent must already be installed and on PATH. The [Skills CLI documentation](https://github.com/vercel-labs/skills#use-a-skill-without-installing) describes prompt generation and agent launch.
+
+### Keep it in one project or across projects
+
+Run this from the project where you want the skill available:
+
+```powershell
+npx skills add Today20092/ArchiveBench --skill archivebench
+```
+
+Choose your agent when prompted. Project installation is the default. To make it available across projects, add `--global`:
+
+```powershell
+npx skills add Today20092/ArchiveBench --skill archivebench --global
+```
+
+This revision configures explicit invocation for Codex and Claude Code. In Codex, start your request with `$archivebench`. In Claude Code, use `/archivebench`. For example, ask it to compare archive settings for your footage, locate the CLI and run `archivebench doctor` before planning an encode.
+
+Codex uses `policy.allow_implicit_invocation: false` in `agents/openai.yaml`. Claude Code uses `disable-model-invocation: true` in `SKILL.md`. See the [Codex skill policy](https://developers.openai.com/codex/skills/) and [Claude Code invocation controls](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill). The Claude field is a client extension that strict Agent Skills validators currently reject. Other clients can handle these settings differently. Existing installed copies retain their previous settings until replaced or updated.
+
+To remove a project installation, run this from the same project:
+
+```powershell
+npx skills remove archivebench
+```
+
+For a global installation, use `npx skills remove archivebench --global`. Select the relevant agents when prompted. These commands remove the skill, not ArchiveBench, presets or archive outputs.
+
+### Install the skill bundled with ArchiveBench
 
 Wheels built from this revision include the portable `archivebench` skill and all its references. Earlier published wheels may predate the installer; use the source-checkout route until a release containing it is available. The skill invokes the same command used in the terminal; it has no separate encoding engine or API-key requirement. Install it into your client's chosen skill directory:
 
@@ -102,6 +148,8 @@ For a source checkout, use `uv run archivebench-skill --destination PATH_TO_CLIE
 
 Choose the discovery directory using your client's documentation; clients use their own locations and may require a reload or enable step. No client configuration is modified by this installer. See the [Agent Skills client list](https://agentskills.io/clients) for links to client instructions. Format compatibility does not establish execution support: the agent needs local filesystem and terminal access plus the installed ArchiveBench and FFmpeg tools. A web-only agent without these capabilities cannot process local footage through the skill.
 
-Verify discovery in your client by invoking `$archivebench` with a completed-project archival request. Ask it to locate the command, inspect its help and run `archivebench doctor` before proposing an encode. The skill should also activate for archive-codec comparisons or preset reuse, and should not activate for ZIP archives, image compression or ordinary delivery exports. These are suggested behavioral smoke cases, not a claim that every client has been tested.
+Verify discovery by explicitly invoking the skill with an archive comparison or preset-reuse request. In Codex and Claude Code, related requests without explicit invocation should not load this skill automatically. See the [skill smoke walkthrough](skill-smoke.md) for suggested checks. Client discovery and execution permissions still need local verification.
+
+Historical named-client check: Codex CLI 0.154.0 discovered the shipped skill in an unrelated project's `.agents/skills/` through `skills/list`. The client's advertised default then performed bounded synthetic tasks with implicit activation, before this revision changed the skill to explicit invocation. That historical run does not verify the new policy. Other clients remain unverified. See [delivery evidence](delivery-evaluation.md).
 
 The [packaged skill](../skills/archivebench/SKILL.md) contains the shared decision workflow. Client-specific installation details live here. Terminal users can continue directly with the command and do not need the skill.
