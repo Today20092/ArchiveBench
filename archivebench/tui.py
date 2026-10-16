@@ -31,6 +31,8 @@ from textual.widgets import (
     TabPane,
 )
 
+from .acceptance import inspect_acceptance, record_acceptance
+from .archive import cleanup
 from .core import save
 from .encoders import SPECS
 from .jobs import validate_job
@@ -151,6 +153,7 @@ class ArchiveApp(App):
         self.root: Path | None = None
         self.job_path: Path | None = None
         self.job_hash = ""
+        self.deletion_preview = None
         self.reviewed = False
         self.busy = False
         self.process: asyncio.subprocess.Process | None = None
@@ -289,6 +292,29 @@ class ArchiveApp(App):
             with TabPane("4 Progress", id="step-progress"):
                 yield Button("Stop safely", id="stop", disabled=True, variant="warning")
                 yield RichLog(id="log", wrap=True, markup=False, highlight=False, max_lines=2000)
+            with TabPane("5 Accept / cleanup", id="step-cleanup"), VerticalScroll():
+                yield Static(
+                    "After processing ends, optionally spot-check outputs or reopen an editor copy. "
+                    "Actual visual/editor reviews can be recorded with the acceptance command. "
+                    "You may instead explicitly accept the preset's quality tradeoff without inspection. "
+                    "Neither processing nor acceptance authorizes deletion.",
+                    classes="hint",
+                )
+                yield Input(placeholder="Your name", id="acceptance-name")
+                yield Input(placeholder="Why you accept the quality tradeoff", id="acceptance-note")
+                yield Button("Accept quality tradeoff without inspection", id="accept-tradeoff")
+                yield Button("Preview original deletion", id="preview-deletion")
+                yield Static(
+                    "No deletion preview. Originals remain intact.",
+                    id="deletion-preview",
+                    markup=False,
+                )
+                yield Button(
+                    "Approve permanent deletion of previewed originals",
+                    id="delete-originals",
+                    disabled=True,
+                    variant="warning",
+                )
         with Horizontal(id="navigation"):
             yield Button("Back", id="back")
             yield Button("Next", id="next", variant="primary")
@@ -322,6 +348,11 @@ class ArchiveApp(App):
             self.scan(self.sources)
 
     def invalidate(self):
+        self.deletion_preview = None
+        self.query_one("#delete-originals", Button).disabled = True
+        self.query_one("#deletion-preview", Static).update(
+            "No current deletion preview. Preview again before approval."
+        )
         self.reviewed = False
         self.query_one("#start", Button).disabled = True
         self.refresh_summary()
@@ -436,8 +467,9 @@ class ArchiveApp(App):
         self.busy = value
         for widget in self.query("Input, Select, SelectionList"):
             widget.disabled = value
-        for name in ("add", "all", "none", "review"):
+        for name in ("add", "all", "none", "review", "accept-tradeoff", "preview-deletion"):
             self.query_one(f"#{name}", Button).disabled = value
+        self.query_one("#delete-originals", Button).disabled = value or not self.deletion_preview
         self.query_one("#preset-table", DataTable).disabled = value
         self.query_one("#stop", Button).disabled = not value
         self.query_one("#start", Button).disabled = value or not self.reviewed
@@ -488,10 +520,12 @@ class ArchiveApp(App):
         action = event.button.id
         if action in ("back", "next"):
             tabs = self.query_one(TabbedContent)
-            steps = ("step-clips", "step-settings", "step-review", "step-progress")
+            steps = ("step-clips", "step-settings", "step-review", "step-progress", "step-cleanup")
             tabs.active = steps[
-                max(0, min(3, steps.index(tabs.active) + (1 if action == "next" else -1)))
+                max(0, min(4, steps.index(tabs.active) + (1 if action == "next" else -1)))
             ]
+        elif action in ("accept-tradeoff", "preview-deletion", "delete-originals"):
+            self.postjob(action)
         elif action == "add":
             value = self.query_one("#source", Input).value.strip().strip('"')
             if value:
@@ -505,6 +539,75 @@ class ArchiveApp(App):
             self.run_engine(True)
         elif action == "stop":
             self.push_screen(StopDialog(), self.confirm_stop)
+
+    @work(exclusive=True, group="postjob")
+    async def postjob(self, action: str):
+        if self.busy:
+            return
+        preview = self.deletion_preview
+        self.deletion_preview = None
+        self.set_busy(True)
+        try:
+            saved = self.query_one("#saved-job", Input).value.strip().strip('"')
+            path = Path(saved) if saved else self.job_path
+            if path is None:
+                raise ValueError("Load or finish a saved job first")
+            job = json.loads(path.read_text(encoding="utf-8"))
+            validate_job(job)
+            root = Path(job["output_root"])
+            if (root / ".lock").exists():
+                raise ValueError("Job is still active; wait before acceptance or cleanup")
+            if action == "accept-tradeoff":
+                await asyncio.to_thread(
+                    record_acceptance,
+                    root,
+                    "quality-tradeoff",
+                    "accept",
+                    self.query_one("#acceptance-name", Input).value,
+                    note=self.query_one("#acceptance-note", Input).value,
+                )
+                self.query_one("#deletion-preview", Static).update(
+                    "Quality tradeoff accepted without visual/editor inspection. Originals retained. Preview deletion separately."
+                )
+            else:
+                state = await asyncio.to_thread(inspect_acceptance, root)
+                if action == "delete-originals":
+                    if not preview or preview != (
+                        str(root),
+                        state["binding"],
+                        state["eligible"],
+                        state["attestations"],
+                    ):
+                        raise ValueError("Deletion preview missing or changed; preview again")
+                    await asyncio.to_thread(
+                        cleanup,
+                        root,
+                        True,
+                        True,
+                        selected_sources=[item["source"] for item in state["eligible"]],
+                    )
+                    self.query_one("#deletion-preview", Static).update(
+                        "Approved originals deleted. Archived outputs retained."
+                    )
+                elif state["eligible"]:
+                    self.deletion_preview = (
+                        str(root),
+                        state["binding"],
+                        state["eligible"],
+                        state["attestations"],
+                    )
+                    self.query_one("#deletion-preview", Static).update(
+                        "Permanent deletion preview (approval applies only to these originals):\n"
+                        + "\n".join(item["source"] for item in state["eligible"])
+                    )
+                else:
+                    raise ValueError(
+                        "No currently accepted verified replacements eligible for deletion"
+                    )
+        except (ValueError, OSError) as error:
+            self.error(error)
+        finally:
+            self.set_busy(False)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected):
         if not self.busy and event.row_key.value is not None:
@@ -574,6 +677,7 @@ class ArchiveApp(App):
     async def execute_engine(self, execute: bool):
         if self.busy or self.job_path is None:
             return
+        self.deletion_preview = None
         self.set_busy(True)
         self.query_one(TabbedContent).active = "step-progress"
         self.stop_pending = False
@@ -610,7 +714,7 @@ class ArchiveApp(App):
             status = (
                 "Preflight finished. Check the Progress log, then return to Review to start."
                 if self.reviewed
-                else "Processing finished. Check failed / kept-original records; visual acceptance is still required."
+                else "Processing finished. Check failed / kept-original records. Continue to Accept / cleanup for optional review or quality-tradeoff acceptance, then separate deletion approval."
                 if code == 0
                 else "Stopped. Review the saved job to resume; completed files are retained."
                 if code == 130

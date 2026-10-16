@@ -575,10 +575,12 @@ def cleanup(
         for gap in state["gaps"]:
             print(gap)
         if not execute:
-            print("Record job visual/editor acceptance, then separately use --execute --reviewed.")
+            print(
+                "Record job review or quality-tradeoff acceptance, then separately use --execute --reviewed."
+            )
             return
         if not reviewed or not state["eligible"]:
-            raise ValueError("Job cleanup requires current visual/editor acceptance and --reviewed")
+            raise ValueError("Job cleanup requires current replacement acceptance and --reviewed")
         lock = output_root / ".lock"
         with lock.open("x") as stream:
             stream.write(str(os.getpid()))
