@@ -53,7 +53,7 @@ Completed files must still pass identity checks. An interrupted file restarts fr
 
 ## Legacy launchers
 
-The packaged `windows/install-send-to.ps1` script accepts `-Legacy`. This is a script option, not an `archivebench-send-to` CLI option. It restores the older Tkinter selector for **Archive footage** and numbered prompts for **Archive footage (terminal)**. The latter accepts one folder, asks for a preset and requires typing `ARCHIVE` after preflight.
+The packaged `windows/install-send-to.ps1` script accepts `-Legacy`. This is a script option, not an `archivebench-send-to` CLI option. It restores the older Tkinter selector for **Archive footage** and numbered prompts for **Archive footage (terminal)**. The latter accepts one folder, asks for a preset and requires typing `ARCHIVE` after preflight. If preflight requires suitability acceptance, type `ACCEPT UNCERTAIN AND ARCHIVE` to explicitly accept that uncertainty and encode. This records the shared suitability decision without asserting visual review or approving deletion. Matching saved jobs can resume with `ARCHIVE`; changed footage/settings still require current consent and all technical checks.
 
 The legacy numbered launcher defaults to `<source>-Archived-<preset-filename>` with an adjacent `.job.json`. Its copied PowerShell script accepts `-SourcePath`, `-Preset`, `-OutputPath` and `-InspectOnly`. These defaults and prompts do not describe the current TUI. See [the legacy desktop guide](archive-desktop.md).
 

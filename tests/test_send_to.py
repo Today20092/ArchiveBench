@@ -63,17 +63,37 @@ def test_launcher_preset_selection_archive_resume_and_changed_snapshot(tmp_path)
     output = Path(str(source) + "-Archived-smaller")
     job = Path(str(output) + ".job.json")
     assert not job.exists()
-    first = powershell(
+    declined = powershell(script, source, "-PresetDirectory", presets, "-NoPause", input="1\n\n")
+    assert declined.returncode == 0, declined.stderr
+    assert not (output / "archive-manifest.json").exists()
+    assert not (output / "suitability-acceptance.json").exists()
+    unaccepted = powershell(
         script, source, "-PresetDirectory", presets, "-NoPause", input="1\nARCHIVE\n"
+    )
+    assert unaccepted.returncode != 0
+    assert "Accept uncertain preset suitability" in unaccepted.stderr
+    assert not (output / "archive-manifest.json").exists()
+    assert not (output / "suitability-acceptance.json").exists()
+    assert hashlib.sha256(clip.read_bytes()).hexdigest() == before
+    first = powershell(
+        script,
+        source,
+        "-PresetDirectory",
+        presets,
+        "-NoPause",
+        input="1\nACCEPT UNCERTAIN AND ARCHIVE\n",
     )
     assert first.returncode == 0, first.stderr
     manifest = json.loads((output / "archive-manifest.json").read_text())
     assert manifest["records"][0]["status"] == "verified"
+    assert manifest["suitability_acceptance"]["status"] == "accepted-uncertain"
     archived = Path(manifest["records"][0]["output"])
     output_time = archived.stat().st_mtime_ns
+    consent = (output / "suitability-acceptance.json").read_bytes()
     repeat = powershell(script, source, "-Preset", preset, "-NoPause", input="ARCHIVE\n")
     assert repeat.returncode == 0, repeat.stderr
     assert archived.stat().st_mtime_ns == output_time
+    assert (output / "suitability-acceptance.json").read_bytes() == consent
     assert hashlib.sha256(clip.read_bytes()).hexdigest() == before
     assert "cleanup" not in first.stdout.lower() or "separate cleanup" in first.stdout.lower()
     original_job = job.read_bytes()

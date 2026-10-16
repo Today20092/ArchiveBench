@@ -79,7 +79,10 @@ def test_readable_settings_and_aac_job(tmp_path, monkeypatch):
             await app.workers.wait_for_complete()
             await pilot.pause()
             await pilot.click("#next")
+            await pilot.pause(0.4)
+            assert app.query_one(TabbedContent).active == "step-setup"
             await pilot.click("#next")
+            await pilot.pause()
             assert app.query_one(TabbedContent).active == "step-settings"
             app.query_one("#preset-table", DataTable).focus()
             await pilot.press("enter")
