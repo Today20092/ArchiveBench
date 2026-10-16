@@ -15,13 +15,13 @@ ArchiveBench tests short sections of your footage on your computer. Compare pict
 
 For first use, compare representative footage and save reusable settings, or choose a built-in starter for immediate archiving. Quality priority, Balanced and Space priority describe intentions, not measured quality guarantees. No benchmark is required to use a starter.
 
-Your hardware determines which encoders work and how fast they run. Your footage determines the measured quality and file size. Your visual review determines which changes you accept. ArchiveBench does not select a preset from your GPU name alone.
+Your hardware determines which encoders work and how fast they run. Your footage determines the measured quality and file size. You choose which quality tradeoffs to accept, through visual/editor review or explicit acceptance without inspection. ArchiveBench does not select a preset from your GPU name alone.
 
 A codec is a video format, such as HEVC or AV1. An encoder produces that format. CPU HEVC and NVIDIA GPU HEVC are separate encoders and can produce different results.
 
 | Use | What you do | What you get |
 | --- | --- | --- |
-| **1. Find your presets** | Benchmark representative footage on your computer; compare quality, size and speed; visually inspect candidates. | An offline HTML report with charts, measurements and comparison clips, plus your chosen preset JSON files. |
+| **1. Find your presets** | Benchmark representative footage on your computer; compare quality, size and speed; review candidates or explicitly accept the quality tradeoff. | An offline HTML report with charts, measurements and comparison clips, plus your chosen preset JSON files. |
 | **2. Archive new projects** | Choose a saved preset and a different footage folder. | Smaller verified copies, actual savings and a job checkpoint you can resume. No new benchmark is required. |
 
 For example, save one higher-quality preset and one smaller preset. Keep both in a permanent folder and choose one for each project. An archive preset stores exact settings and the historical measurement scope. Each archive job stores the project's folders and a snapshot of the selected settings. You can reuse presets without an agent or API key.
@@ -56,7 +56,7 @@ archivebench doctor
 
 `doctor` checks tools and lists encoders. A listed encoder still needs to pass an actual encode on the selected footage format.
 
-If the command is not found after installation, open a new terminal. See [installation](docs/installation.md) for upgrades or a source checkout.
+If the command is not found after installation, open a new terminal. The commands above install released **v0.2.0**; newer features merged into `main` require the [source-checkout installation](docs/installation.md#install-a-source-checkout). Follow that guide to run checkout commands with `uv run` or install persistent commands from the checkout. See [installation](docs/installation.md) for upgrades.
 
 ### 2. Choose short footage sections
 
@@ -136,7 +136,7 @@ For a benchmark, rerun the same command to reuse completed measurements. Changed
 
 ## Archive future projects
 
-For immediate archiving, run `archivebench preset list`, export a listed starter with `archivebench preset export STARTER_PATH --output starter.json`, and use it in the job commands above. See [starter presets and job outcomes](docs/terminal-workflow.md#immediate-use-and-job-outcomes) for unmeasured limits, external destinations, offline summaries, resume and separate deletion approval. This archives selected footage, not the whole editing project.
+For immediate archiving, run `archivebench preset list`, export a listed starter with `archivebench preset export STARTER_PATH --output starter.json`, and use it in the job commands below. See [starter presets and job outcomes](docs/terminal-workflow.md#immediate-use-and-job-outcomes) for unmeasured limits, external destinations, offline summaries, resume and separate deletion approval. This archives selected footage, not the whole editing project.
 
 ### Open the terminal UI
 
@@ -146,7 +146,7 @@ Open the terminal UI to choose a saved preset or a built-in starter:
 archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project"
 ```
 
-Follow **Clips > Settings > Review > Progress**. Add sources, select clips, choose a saved preset and output folder, then run preflight before Start. You can stop safely and resume the saved job later.
+Follow **Setup / compare > Clips > Settings > Review > Progress > Accept / cleanup**. Setup offers an optional comparison; choose a starter or saved preset to archive immediately. Add sources, select clips, choose a preset and output folder, then run preflight before Start. You can stop safely and resume the saved job later. After processing ends, record replacement acceptance, then separately preview and approve any cleanup.
 
 ![ArchiveBench Settings showing example CPU and GPU presets, the selected preset, destination folder and audio policy.](docs/images/tui-settings.png)
 
@@ -168,7 +168,7 @@ archivebench job run "D:\New Project\archive-job.json" --execute
 
 Choose your higher-quality preset instead when that is what you want. For another project, create another job pointing to its source/output folders and reuse either preset. The saved presets remain portable; jobs have independent checkpoints. Editing a preset later does not change an existing job's snapshot.
 
-Inspection shows compatibility, scope, available time/size estimates and exceptions; it runs short scratch probes. Execution encodes the selected files, verifies outputs and records actual savings including retained streams. Outputs are MKV; originals stay intact. Unsupported preservation cases keep originals, and files without worthwhile savings are retained. Consider a short confirmation comparison when footage or hardware differs materially from your tested scope, rather than repeating a full benchmark for every project.
+Inspection shows compatibility, scope, available time/size estimates and exceptions; it runs short scratch probes. Execution encodes the selected files, verifies outputs and records actual savings including retained streams. Outputs follow the explicit MKV, MOV or MP4 container policy; presets without a container default to MKV. Timecode preservation requires supported MOV/MP4 output and verification. Preflight blocks incompatible stream/container combinations; originals stay intact. Unsupported preservation cases keep originals, and files without worthwhile savings are retained. Consider a short confirmation comparison when footage or hardware differs materially from your tested scope, rather than repeating a full benchmark for every project.
 
 ### Resume an archive job
 
@@ -190,7 +190,7 @@ archivebench-send-to --install --preset-directory "D:\Archive Presets"
 
 Select folders, clips or a mixture, then choose **Send to > Archive footage**. Windows 11 may require **Show more options**. Both archive shortcuts now open the TUI; the shortcut named **Archive footage (terminal)** is retained for compatibility. Source selections must share one drive. Choose the destination in Settings, run preflight in Review, then use Start. These shortcuts do not start a benchmark. **Review originals for deletion** opens the separate acceptance-gated cleanup workflow for one archive folder.
 
-The TUI proposes `Archived Footage` beneath the selected project or common source folder, or beside a directly selected `Original Footage` folder. Review the destination, especially when combining projects. Resume with `archivebench-tui --job "D:\Project\Archived Footage.job.json"`. Saved jobs retain their exact settings and selected files; use a different destination for a different preset version. See [installation and removal](docs/windows-send-to.md).
+The TUI proposes `Archived Footage` beneath the selected project or common source folder, or beside a directly selected `Original Footage` folder. Review the destination, especially when combining projects. New TUI jobs are saved as `archive-job.json` inside the output folder, with `archive-job.json.log` alongside it. Resume with `archivebench-tui --job "D:\Project\Archived Footage\archive-job.json"`. Older adjacent `Archived Footage.job.json` files remain supported; CLI-created job files can use the explicit path shown above. Saved jobs retain their exact settings and selected files; use a different destination for a different preset version. See [installation and removal](docs/windows-send-to.md).
 
 Optionally review replacements and reopen a separate editing-project copy, or explicitly accept the preset's quality tradeoff without inspection. This does not establish editor compatibility or proprietary metadata preservation.
 

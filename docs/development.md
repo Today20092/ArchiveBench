@@ -42,6 +42,15 @@ The browser check uses installed Windows Edge by default. Set `ARCHIVEBENCH_BROW
 
 Synthetic examples contain no personal footage. Do not present their performance figures as real camera results. Keep generated media, local configs, logs and private paths out of Git.
 
+## Pull request documentation review
+
+Before creating or merging a PR:
+
+1. Add a documentation task to the local ticket or PR checklist. For substantial changes to commands, defaults, installation, workflows or safety behavior, assign a documentation subagent to review the final diff and update `README.md` and affected guides. If subagents are unavailable, perform and record this review directly.
+2. Keep the README's overview, quick start and navigation aligned with the shipped behavior; put detailed instructions in linked guides. Verify command examples, relative links, job paths, supported formats and limitations. Distinguish features on `main` from published release contents.
+3. Include documentation changes in the feature PR. If a separate documentation PR is necessary, link both PRs and merge the documentation before or with the feature. A separate PR is optional.
+4. Record the reviewed documents and checks in the PR description. When no documentation changes are needed, record the reason. Repeat the review when the final scope changes; finish only when each user-facing change is covered by the README or an accurate linked guide.
+
 ## Dependencies and licensing
 
 GitHub CI runs these checks on Windows with Python 3.11 and a checksum-verified full FFmpeg 8.1.2 build. It creates a fresh synthetic benchmark, checks the offline report and installs the built wheel in isolation. Local hardware results still need their own probes; CI does not certify a GPU or editor workflow.
