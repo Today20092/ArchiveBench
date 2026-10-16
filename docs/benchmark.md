@@ -1,5 +1,7 @@
 # Running and interpreting a benchmark
 
+For the current development workflow, start with a [fixed comparison](quick-comparison.md). It measures saved settings within your time allowance and exports measured starting presets. The target-tuning sections below describe the optional search for settings at specific quality targets.
+
 [Back to the README](../README.md) · [Configuration](configuration.md) · [Archiving](archiving.md)
 
 ## Choose samples
@@ -15,6 +17,12 @@ Select short sections with motion, fine detail and dark or noisy footage. Simila
 Use the saved configuration and canonical `results.json` as the experiment record. JSON, CSV and Markdown results accompany the HTML report. Report controls reinterpret saved measurements; they do not encode new candidates.
 
 ## Screening and tuning
+
+This section describes `setup --strategy tune`, not the default fixed comparison. It uses tuning samples to find settings and fresh validation samples to check the finalists.
+
+![Target tuning: measure settings on tuning samples, require every sample to pass, freeze finalists, then check fresh validation samples.](diagrams/recommendation-flow.svg)
+
+[Open the target-tuning diagram](diagrams/recommendation-flow.html). A fixed comparison does not include these fresh-validation checks. Visual acceptance remains a separate decision.
 
 Configured H.264, H.265, AV1 and VP9 encoders available in FFmpeg get a one-second compatibility/quality screen. Hardware encoders must actually encode the selected format. Unconfigured or failing implementations are reported.
 
