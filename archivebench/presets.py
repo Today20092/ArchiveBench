@@ -1,9 +1,15 @@
 """Portable settings and historical evidence; project paths belong to jobs."""
 
 import json
+from pathlib import Path
 from typing import Any
 
 from .encoders import SPECS, options
+
+
+def starter_paths() -> list[Path]:
+    """Bundled, portable starting settings; no benchmark evidence is implied."""
+    return sorted(Path(__file__).with_name("starter_presets").glob("*.json"))
 
 
 def settings_fingerprint(settings: dict[str, Any]) -> str:
@@ -102,13 +108,14 @@ def inspect_preset(
     unsupported = []
     if encoders is not None and settings["encoder"] not in encoders:
         unsupported.append("encoder/hardware unavailable")
-    if (
-        formats is not None
-        and settings["pixel_format"] != "source"
-        and settings["pixel_format"] not in formats
-    ):
-        unsupported.append("output pixel format unavailable")
     footage = context.get("footage", [])
+    required_formats = (
+        [item.get("pix_fmt", item.get("pixel_format")) for item in footage]
+        if settings["pixel_format"] == "source"
+        else [settings["pixel_format"]]
+    )
+    if formats is not None and any(fmt and fmt not in formats for fmt in required_formats):
+        unsupported.append("output pixel format unavailable")
     tested = preset["scope"]["footage"]
     return {
         "preset": preset,
