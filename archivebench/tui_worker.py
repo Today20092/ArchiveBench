@@ -44,7 +44,17 @@ def main():
             )
             import json
 
-            print("ARCHIVEBENCH_PREFLIGHT=" + json.dumps(plan), flush=True)
+            summary = {"suitability": {"status": plan["suitability"]["status"]}, "alternatives": []}
+            for item in plan.get("alternatives", []):
+                gaps = item.get("gaps", []) or next(
+                    (row["gaps"] for row in item.get("files", []) if row["gaps"]), []
+                )
+                summary["alternatives"].append(
+                    {key: item[key] for key in ("path", "preset", "compatibility")}
+                    | {"gaps": [gap[:2000] for gap in gaps[:1]]}
+                )
+            # Keep the UI event bounded independently of batch size; full per-file evidence is logged above.
+            print("ARCHIVEBENCH_PREFLIGHT=" + json.dumps(summary), flush=True)
     except KeyboardInterrupt:
         print(
             "Stopped safely. Completed records remain; interrupted clips restart on resume.",

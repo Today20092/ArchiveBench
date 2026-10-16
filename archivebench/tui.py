@@ -999,7 +999,7 @@ class ArchiveApp(App):
                         self.query_one("#alternatives", Static).update(
                             "Probed on this selection (quality remains untested):\n"
                             + "\n".join(choices)
-                            + "\nChoose a preset above explicitly, match the shown policy settings and preflight again. Current job is unchanged."
+                            + "\nFirst failure shown per candidate; full per-file reasons are in the Progress log. Choose a preset above explicitly, match the shown policy settings and preflight again. Current job is unchanged."
                         )
                     continue
                 self.query_one("#log", RichLog).write(text)

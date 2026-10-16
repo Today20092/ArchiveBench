@@ -346,6 +346,9 @@ def archive(
         stream.write(str(os.getpid()))
     try:
         if job is not None:
+            from .jobs import completed_deletions
+
+            completed_deletions(job)
             manifest["suitability_acceptance"] = suitability
         manifest["selected_sources"] = list(
             dict.fromkeys([*manifest.get("selected_sources", []), *(str(path) for path in files)])
