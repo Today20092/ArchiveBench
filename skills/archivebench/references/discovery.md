@@ -1,6 +1,6 @@
 # Discover footage and tools
 
-Locate `archivebench`, `ffmpeg` and `ffprobe` on PATH (`Get-Command` in PowerShell). Run `archivebench doctor` and retain the build, libvmaf and configured encoder information. Listed GPU encoders still require actual probes on the selected device and format. A timeout is not proof of incompatibility.
+Locate `archivebench`, `ffmpeg` and `ffprobe` on PATH (`Get-Command` in PowerShell). Run `archivebench doctor` and retain CPU/GPU inventory, the build, libvmaf, configured encoders and capability evidence. The runner intersects recognized NVIDIA/AMD manufacturer capabilities and available Apple media-engine evidence with FFmpeg encoder/pixel-format support, excluding known impossible combinations before runtime probes. Unknown models, Intel hardware, uncertain device selection and undocumented Apple chroma/bit-depth support retain runtime checks. Use `doctor --config CONFIG` for bounded synthetic checks of exact saved settings and `--refresh` to bypass cached evidence. Manufacturer-supported possibilities still require real encodes. A timeout is not proof of incompatibility.
 
 Restricted agents need writable scratch for Python temporary files, not just the destination folder. If preflight reports a scratch permission error, distinguish it from encoder incompatibility. Set process-local `TMP`/`TEMP` to an owned writable job scratch directory before invoking the runner; do not modify global environment or bypass permissions. Stop dependent operations if a writable location is unavailable.
 

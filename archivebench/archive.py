@@ -23,6 +23,7 @@ from .encoders import SPECS, options
 from .mux import validate_mux, suffix, mux_args, stream_gaps, timecode
 from .formats import output_video, retention, scale_filter, validate_formats
 from .job_summary import refresh_summary
+from .hardware_limits import check_capability, require_capability
 
 EXTENSIONS = {".mov", ".mp4", ".mkv", ".mxf", ".avi", ".mts", ".m2ts", ".webm", ".m4v"}
 
@@ -312,6 +313,9 @@ def archive(
     if not execute:
         print("Add --execute after reviewing this list to encode.")
         return
+    from .hardware import inventory
+
+    hardware = inventory(ffmpeg, ffprobe)
     if job is not None:
         from .jobs import suitability_decision
 
@@ -358,6 +362,7 @@ def archive(
             save(local_job, manifest["job"])
             manifest["job_path"] = str(local_job)
         manifest["last_run"] = "running"
+        manifest["hardware"] = hardware
         save(manifest_path, manifest)
         for file_number, path in enumerate(files, 1):
             if stop_requested and stop_requested():
@@ -430,6 +435,11 @@ def archive(
             info = probe(path, ffprobe)
             video = inspect_source(path, 0, min(1, float(info["format"]["duration"])), ffprobe)
             target = output_video(video, settings)
+            record["capability"] = check_capability(
+                hardware, settings["encoder"], target["pix_fmt"]
+            )
+            save(manifest_path, manifest)
+            require_capability(hardware, settings["encoder"], target["pix_fmt"])
             gaps = stream_gaps(info, settings)
             if gaps:
                 raise ValueError("; ".join(gaps))

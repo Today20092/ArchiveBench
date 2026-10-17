@@ -20,6 +20,7 @@ def public_result(result: dict[str, Any]) -> dict[str, Any]:
     # Keep that detailed evidence in local canonical results, not portable reports.
     value.pop("capabilities", None)
     for item in value.get("work", []):
+        item.pop("capability", None)
         if "reason" in item:
             item["reason"] = (
                 "See local results.json for details"
@@ -62,6 +63,7 @@ def public_result(result: dict[str, Any]) -> dict[str, Any]:
             {**sample, "path": "[local source]"} for sample in value["config"]["validation_samples"]
         ]
     for skipped in value["skipped"]:
+        skipped.pop("capability", None)
         # FFmpeg diagnostics can contain local paths; raw errors remain in local results.json.
         skipped["reason"] = skipped["reason"].splitlines()[0][:160]
         for sample in result["config"]["samples"]:

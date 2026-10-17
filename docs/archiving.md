@@ -48,8 +48,10 @@ archivebench job run project-job.json --execute
 Run without `--execute` to inspect first. Preflight lists source/destination mappings, resolved
 settings, unsupported preservation cases, a scratch planning allowance and historical video-only
 estimates when the preset supplies measured byte/time rates. Unknown estimates remain unknown;
-retained streams and verification time are excluded. Short encode/mux probes run before full
-encoding. A successful probe does not certify editor compatibility or proprietary metadata.
+retained streams and verification time are excluded. [Hardware/FFmpeg capability checks](hardware.md)
+reject known unsupported combinations before scratch encoding. Remaining candidates, including
+unknown hardware, still need short encode/mux probes before full encoding.
+A successful probe does not certify editor compatibility or proprietary metadata.
 Data streams, cover art and multiple video streams without a tested preservation path
 produce a keep-original outcome. Originals remain intact.
 
