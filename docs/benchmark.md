@@ -24,7 +24,7 @@ This section describes `setup --strategy tune`, not the default fixed comparison
 
 [Open the target-tuning diagram](diagrams/recommendation-flow.html). A fixed comparison does not include these fresh-validation checks. Visual acceptance remains a separate decision.
 
-Configured H.264, H.265, AV1 and VP9 encoders are checked against [manufacturer/FFmpeg capability evidence](hardware.md) before runtime probes. Known impossible combinations are excluded; unknown support retains runtime checks. Eligible candidates get a one-second compatibility/quality screen. Hardware encoders must actually encode the selected format. Unconfigured or failing implementations are reported.
+Configured H.264, H.265, AV1 and VP9 encoders are checked against [native driver and FFmpeg capability evidence](hardware.md), with bundled manufacturer specifications as fallback, before runtime probes. Known impossible combinations are excluded; unknown support retains runtime checks. Eligible candidates get a one-second compatibility/quality screen. Hardware encoders must actually encode the selected format. Unconfigured or failing implementations are reported.
 
 | Mode | Finalists | Quality attempts per finalist per target | Timed encodes per attempt |
 | --- | ---: | ---: | --- |

@@ -154,6 +154,15 @@ def _inventory(ffmpeg: str, ffprobe: str) -> dict[str, Any]:
             "decode": {"mode": "software", "hardware_support": "not-probed"},
             "device_selection": "existing FFmpeg adapter default; not a per-device certification",
             "capability_table_sha256": core.digest(Path(__file__).with_name("hardware_limits.py")),
+            "driver_query_sha256": {
+                name: core.digest(Path(__file__).with_name(name))
+                for name in (
+                    "driver_query.py",
+                    "_driver_nvidia.py",
+                    "_driver_amd.py",
+                    "_driver_apple.py",
+                )
+            },
         },
         core.run,
     )

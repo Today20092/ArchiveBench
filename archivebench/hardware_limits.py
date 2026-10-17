@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .encoders import SPECS
+from .driver_query import query_drivers, driver_verdict
 
 MATRIX = "https://developer.nvidia.com/video-encode-decode-support-matrix"
 SDK = "https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-application-note/index.html"
@@ -79,6 +80,7 @@ def amd_support(name: str, codec: str, pixel: str) -> bool | None:
 
 def add_limits(hardware: dict[str, Any], run: Callable[..., str]) -> dict[str, Any]:
     """Enrich the existing bounded inventory without running encodes or using the network."""
+    drivers = query_drivers(hardware, run)
     formats = {}
     for encoder in hardware["configured"]:
         try:
@@ -91,6 +93,7 @@ def add_limits(hardware: dict[str, Any], run: Callable[..., str]) -> dict[str, A
             formats[encoder] = None
     return {
         **hardware,
+        "driver_queries": drivers,
         "encoder_pixel_formats": formats,
         "manufacturer_sources": [MATRIX, SDK, AMD_MATRIX, *APPLE_SPECS],
         "table_revision": REVISION,
@@ -109,9 +112,19 @@ def check_capability(snapshot: dict[str, Any], encoder: str, pixel: str) -> dict
         "status": "unknown",
         "reason": "Device capabilities unknown; actual encode probe required",
         "table_revision": snapshot.get("table_revision", REVISION),
+        "source": "unknown",
     }
+    native = driver_verdict(snapshot, encoder, pixel)
+    if native:
+        evidence.update(native)
+        evidence["driver_evidence"] = native
     if "configured" in snapshot and encoder not in snapshot["configured"]:
-        return {**evidence, "status": "unsupported", "reason": "Not present in FFmpeg build"}
+        return {
+            **evidence,
+            "status": "unsupported",
+            "source": "ffmpeg",
+            "reason": "Not present in FFmpeg build",
+        }
     formats = snapshot.get("encoder_pixel_formats", {}).get(encoder)
     # Hardware surfaces alone don't describe a layout; keep them probeable.
     if formats and set(formats).difference({"cuda", "qsv", "vaapi", "d3d11", "vulkan"}):
@@ -119,8 +132,12 @@ def check_capability(snapshot: dict[str, Any], encoder: str, pixel: str) -> dict
             return {
                 **evidence,
                 "status": "unsupported",
+                "source": "ffmpeg",
                 "reason": f"Installed FFmpeg {encoder} cannot preserve requested bit depth/chroma ({pixel})",
             }
+    if native:
+        return evidence
+    evidence["source"] = "manufacturer-fallback"
     if encoder.endswith("_nvenc"):
         devices = [
             device for device in snapshot.get("devices", []) if device.get("vendor") == "NVIDIA"

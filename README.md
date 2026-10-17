@@ -54,7 +54,7 @@ uv tool update-shell
 archivebench doctor
 ```
 
-`doctor` identifies your hardware and tools, lists FFmpeg encoders and checks format support against recognized NVIDIA/AMD specifications and available Apple media-engine evidence. Known impossible combinations are skipped before encoding; unknown formats still need runtime checks. After saving a comparison config, run `archivebench doctor --config local-config.json` to check its exact encoder settings and output formats with bounded synthetic probes. See [hardware checks and their limits](docs/hardware.md).
+`doctor` identifies your hardware and tools, queries NVIDIA NVENC, AMD AMF or Apple VideoToolbox where available, then intersects that evidence with installed FFmpeg support. Bundled manufacturer specifications provide a fallback. Known impossible combinations are skipped; unknown formats retain runtime checks. After saving a comparison config, run `archivebench doctor --config local-config.json` to verify its exact settings and output formats with bounded synthetic probes. See [hardware checks and their limits](docs/hardware.md).
 
 If the command is not found after installation, open a new terminal. The commands above install released **v0.2.0**; newer features merged into `main` require the [source-checkout installation](docs/installation.md#install-a-source-checkout). Follow that guide to run checkout commands with `uv run` or install persistent commands from the checkout. See [installation](docs/installation.md) for upgrades.
 
