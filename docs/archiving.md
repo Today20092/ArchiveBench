@@ -37,6 +37,19 @@ The installed runner accepts any source and destination folders. A portable pres
 settings and historical evidence; a local job contains folder paths, an embedded preset snapshot
 and explicit file exceptions. Editing the original preset does not change an existing job.
 
+After execution, open `archive-summary.html` in the destination. Read completed, failed,
+kept-original and unfinished outcomes separately. Unfinished or failed work calls for inspection
+and recovery with the same saved job; verified replacements still need a human acceptance
+decision. When there is no suitable replacement, keep the originals. Potential savings describe
+replacement sizes; space is reclaimed only when separately approved cleanup actually removes
+originals. Encoding completion alone never authorizes that cleanup.
+
+The summary is a snapshot of recorded verification, settings and historical preset evidence.
+Reopening it does not recheck changed files or validate the preset on a new project. Use
+`archivebench job inspect project-job.json` to inspect the saved job before restarting it;
+execution retains its existing identity and verification checks. Completed verified files can
+be reused, while an interrupted file restarts from the beginning.
+
 ```powershell
 archivebench job create project-job.json --source footage --output archive-output --preset accepted-preset.json
 archivebench job inspect project-job.json

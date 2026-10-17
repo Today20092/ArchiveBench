@@ -601,6 +601,23 @@ def run_job(
     if stop_requested and stop_requested():
         raise KeyboardInterrupt
     plan["suitability"] = suitability_decision(job, plan, accept_uncertain_suitability)
+    encodes = sum(row["action"] == "encode" for row in plan["files"])
+    print(
+        f"Preflight: {encodes} files can be encoded; {len(plan['files']) - encodes} keep originals.\n"
+        f"Saved job: {job_path}\nSource: {job['source_root']}\nOutput: {job['output_root']}\n"
+        f"Space planning allowance: {plan['estimates']['scratch_bytes']} bytes "
+        f"(source-size estimate, not guaranteed output size); available: {plan['estimates']['available_bytes']} bytes.\n"
+        "Duration and output-size estimates, when available below, use historical video measurements; "
+        "retained streams, verification and untested footage are excluded. Otherwise estimates are unknown.\n"
+        "Stop retains completed records; current processing must finish stopping, and unfinished files "
+        "restart from the beginning. Originals remain intact.\n"
+        + (
+            "Next: review incompatibility reasons; no files are ready to encode with these choices."
+            if not encodes
+            else "Next: review the plan and historical scope before starting. Compatibility is not quality acceptance."
+        ),
+        flush=True,
+    )
     print(json.dumps(plan, indent=2))
     if execute:
         if plan["suitability"]["status"] == "acceptance-required":

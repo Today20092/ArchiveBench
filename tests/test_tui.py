@@ -319,6 +319,8 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
             await app.workers.wait_for_complete()
             assert app.process is None and not app.busy
             assert "Stopped safely" in log_path.read_text()
+            status = str(app.query_one("#status", Static).content)
+            assert "unfinished: 1" in status and "restart from the beginning" in status
             assert not (output / ".lock").exists()
             assert (
                 json.loads((output / "archive-manifest.json").read_text())["records"][0]["status"]
@@ -334,6 +336,12 @@ def test_tui_interrupt_then_resume_same_job(tmp_path):
                 == "verified"
             )
             assert (source / "a.mkv").exists()
+            status = str(app.query_one("#status", Static).content)
+            assert "Verified: 1" in status and "inspect replacement acceptance" in status
+            await pilot.resize_terminal(80, 25)
+            await pilot.pause()
+            assert app.query_one("#status").region.bottom < app.size.height
+            assert app.query_one("#log").region.height >= 8
 
     asyncio.run(exercise())
 

@@ -14,6 +14,39 @@ from .presets import encoder_options
 from .encoders import SPECS
 
 
+def comparison_summary(result: dict[str, Any]) -> str:
+    """Describe saved work without promoting measurements into recommendations."""
+    trials = len(result.get("trials", []))
+    work = result.get("work")
+    counts = (
+        f"Completed: {sum(item['status'] == 'completed' for item in work)}; "
+        f"failed: {sum(item['status'] == 'failed' for item in work)}; "
+        f"unfinished: {sum(item['status'] == 'pending' for item in work)}; "
+        f"not selected: {sum(item['status'] == 'not selected' for item in work)}. "
+        if work is not None
+        else "Remaining work is not counted for this adaptive search. "
+    )
+    next_step = (
+        "Next: review measured footage and coverage in the report before choosing a preset."
+        if trials
+        else "Next: inspect failed or unfinished work and correct the cause before retrying. No measured preset is available."
+    )
+    evidence = (
+        "Fixed settings are measured starting points, not fresh validation or visual acceptance."
+        if result.get("config", {}).get("strategy") == "fixed"
+        else "Only settings passing every required tuning and fresh check qualify; visual review remains separate."
+    )
+    return (
+        f"Recorded comparison: {str(result.get('status', 'unknown')).replace('_', ' ')}. "
+        f"Measured trials: {trials}; skipped/failed probes: {len(result.get('skipped', []))}. "
+        + counts
+        + next_step
+        + " "
+        + evidence
+        + " Saved evidence is not a fresh check of changed files."
+    )
+
+
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
     # Capability diagnostics include device identifiers, executable and source paths.
@@ -81,6 +114,7 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
     assets = Path(__file__).parent / "assets"
     reviews = saved_reviews(directory)
     public = public_result(result)
+    public["workflow_summary"] = comparison_summary(result)
     public["visual_reviews"] = [
         {
             **{
@@ -177,6 +211,7 @@ def write_report(result: dict[str, Any], directory: Path) -> Path:
         "# ArchiveBench results",
         "",
         f"Status: {result['status']}",
+        comparison_summary(result),
         f"Fresh-footage validation: {result.get('validation_status', 'provisional, no reviewed holdouts')}",
         "Quality: observed fixed settings; no target search"
         if result["config"].get("strategy") == "fixed"

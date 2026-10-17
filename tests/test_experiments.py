@@ -20,6 +20,47 @@ def test_status_labels_saved_running_checkpoint(tmp_path, monkeypatch, capsys):
     assert value["completed_trials"] == 4
 
 
+@pytest.mark.parametrize("status", ["completed", "interrupted", "budget_exhausted", "failed"])
+def test_reopened_comparison_reports_partial_work_without_qualifying_it(
+    tmp_path, monkeypatch, capsys, status
+):
+    result = {
+        "status": status,
+        "config": {"strategy": "fixed"},
+        "trials": [{"id": "measured"}],
+        "skipped": [{"reason": "encoder failed"}],
+        "work": [{"status": value} for value in ["completed", "failed", "pending", "not selected"]],
+    }
+    (tmp_path / "results.json").write_text(json.dumps(result))
+    monkeypatch.setattr(sys, "argv", ["archivebench", "status", str(tmp_path)])
+    main()
+    value = json.loads(capsys.readouterr().out)
+    assert value["checkpoint_status"] == status and value["activity"] == "unknown"
+    assert "Completed: 1; failed: 1; unfinished: 1; not selected: 1" in value["outcome"]
+    assert "not fresh validation or visual acceptance" in value["outcome"]
+    assert "same saved configuration and output folder" in value["next_step"]
+    result["trials"] = []
+    (tmp_path / "results.json").write_text(json.dumps(result))
+    main()
+    assert "No measured preset is available" in json.loads(capsys.readouterr().out)["outcome"]
+
+
+def test_failed_comparison_preserves_choices_and_explains_recovery(tmp_path, monkeypatch, capsys):
+    config = tmp_path / "config.json"
+    config.write_text('{"strategy": "fixed", "samples": []}')
+    original = config.read_bytes()
+    monkeypatch.setattr(
+        sys, "argv", ["archivebench", "benchmark", str(config), "--output", str(tmp_path / "run")]
+    )
+    with pytest.raises(SystemExit) as stopped:
+        main()
+    assert stopped.value.code == 1
+    error = capsys.readouterr().err
+    assert "Correct the reported problem" in error
+    assert "same configuration and output folder" in error
+    assert config.read_bytes() == original
+
+
 def test_initial_plan_is_bounded_and_discloses_choices(tmp_path, monkeypatch, capsys):
     source = tmp_path / "clip.mov"
     source.touch()

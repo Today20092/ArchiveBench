@@ -18,7 +18,7 @@ Regular terminal commands keep your existing window size. Advanced options expla
 
 The interface has **Setup / compare → Clips → Settings → Review → Progress**, followed by **Accept / cleanup** after processing ends. Setup offers a representative-footage comparison; you can instead choose a built-in starter or saved preset. Use the tabs or Back/Next. Settings shows a concise preset summary and destination; container, timecode and data policies are under Advanced. Review separates the selected clip count, source, destination and audio policy. Preflight must succeed before Start becomes available.
 
-Summaries update when selections or settings change; navigating between tabs does not rebuild them.
+Summaries update when selections or settings change; navigating between tabs does not rebuild them. When loading a saved job, Review identifies its saved source, destination and settings, and labels preset evidence as historical. Those recorded facts take precedence over new-job controls; they do not establish fresh quality or verification for changed files. Review the preflight plan for historical scope and current compatibility.
 
 Choosing **AAC audio** reveals bitrate per channel, with the stereo equivalent shown beside each choice. For example, 128 kbps per channel means 256 kbps for a stereo track. The default remains 192 kbps per channel. Copy audio leaves the original audio encoding unchanged. The selected bitrate is saved in the job and reused on resume.
 

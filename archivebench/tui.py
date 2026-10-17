@@ -48,6 +48,8 @@ from .hardware import (
     suggested_encoders,
 )
 from .jobs import validate_job
+from .job_summary import job_outcome
+from .report import comparison_summary
 from .presets import resolve_settings, starter_paths
 from .selection import selected_job, selection_defaults
 from .tui_estimates import clip_duration, duration_label, measured_rate
@@ -470,10 +472,26 @@ class ArchiveApp(App):
             str(audio), f"AAC: {self.query_one('#aac-bitrate', Select).value} kbps per channel"
         )
         saved = self.query_one("#saved-job", Input).value
+        if saved.strip():
+            try:
+                job = json.loads(Path(saved.strip().strip('"')).read_text(encoding="utf-8"))
+                validate_job(job)
+                self.query_one("#review-summary", Static).update(
+                    f"Saved job: {saved}\nFrom: {job['source_root']}\nTo: {job['output_root']}\n"
+                    f"Preset: {job['preset'].get('name', 'Unnamed settings')}\n"
+                    f"Selected: {job.get('selected_files', 'All eligible files')}\n"
+                    + preset_description(resolve_settings(job["preset"]))
+                    + "\nThe saved job's settings take priority. Preset evidence is historical. "
+                    "Run preflight to check current compatibility; saved outcomes are in "
+                    f"{Path(job['output_root']) / 'archive-summary.html'} if processing has started."
+                )
+            except (OSError, ValueError) as error:
+                self.query_one("#review-summary", Static).update(
+                    f"Cannot read saved job: {error}\nCorrect the saved-job path; entered choices are retained."
+                )
+            return
         self.query_one("#review-summary", Static).update(
-            f"Resume saved job: {saved}\nThe saved job's sources and settings take priority."
-            if saved
-            else f"{count}\n\nFrom: {self.root or 'Not selected'}\n"
+            f"{count}\n\nFrom: {self.root or 'Not selected'}\n"
             f"To:   {self.query_one('#output', Input).value or 'Not selected'}\n\n"
             f"Preset: {Path(preset).stem if isinstance(preset, str) else 'Not selected'}\n"
             f"Audio: {audio_text}\nContainer: {self.query_one('#container', Select).value}\n"
@@ -869,7 +887,13 @@ class ArchiveApp(App):
             save(self.comparison_config, config)
             self.comparison_hash = hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
             self.query_one("#comparison-brief", Static).update(
-                availability_summary(capabilities)
+                f"Ready to compare {len(samples)} selected clips, {seconds:g} seconds each from {start:g}s.\n"
+                f"Destination: {output}\nSaved configuration: {config_path}\n"
+                f"Settings: {config['fixed_settings']}\nWall-clock allowance: {config['budget_minutes']:g} minutes. "
+                "Actual duration and required scratch space are unknown before measurement.\n"
+                "Stop waits for owned process cleanup. Saved measurements remain; interrupted trials restart "
+                "from the beginning when the same configuration/output is rerun through the CLI.\n\n"
+                + availability_summary(capabilities)
                 + "\n\n"
                 + json.dumps(experiment_plan(config), indent=2)
                 + "\nOriginals retained. Video-only sample; no fresh validation or visual acceptance. "
@@ -901,10 +925,18 @@ class ArchiveApp(App):
                 code = await self.worker_output(self.comparison_config, ["--comparison"])
                 report = self.comparison_config.parent / "report.html"
                 self.query_one("#comparison-report", Button).disabled = not report.exists()
+                results = self.comparison_config.parent / "results.json"
+                outcome = (
+                    comparison_summary(json.loads(results.read_text(encoding="utf-8")))
+                    if results.exists()
+                    else "No saved measurements are available. Correct the reported problem before retrying."
+                )
                 self.query_one("#status", Static).update(
-                    f"Comparison {'finished' if code == 0 else 'stopped or failed'}. "
-                    "Return to Setup / compare, open the report, inspect missing/failed evidence, export a preset and load it here. "
-                    "Short measurements do not validate all footage."
+                    f"Comparison {'finished' if code == 0 else 'stopped' if code == 130 else 'failed'}. "
+                    + outcome
+                    + f"\nReport: {report if report.exists() else 'not generated; use archivebench report on saved results.json if present'}. "
+                    f'To retry through the CLI: archivebench benchmark "{self.comparison_config}" '
+                    f'--output "{self.comparison_config.parent}". Completed measurements are checked before reuse.'
                 )
             except (OSError, ValueError) as error:
                 self.error(error)
@@ -949,6 +981,14 @@ class ArchiveApp(App):
                     save(path, job)
             self.job_path = path.resolve()
             self.job_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.query_one("#review-summary", Static).update(
+                f"Saved job: {self.job_path}\nFrom: {job['source_root']}\nTo: {job['output_root']}\n"
+                f"Preset: {job['preset'].get('name', 'Unnamed settings')}\n"
+                f"Selected: {job.get('selected_files', 'All eligible files')}\n"
+                + preset_description(resolve_settings(job["preset"]))
+                + "\nPreset evidence is historical. Preflight checks compatibility, not visual acceptance. "
+                "Stop retains completed records; unfinished files restart from the beginning."
+            )
             self.query_one("#log", RichLog).write(
                 f"Saved job: {self.job_path}\nSource: {job['source_root']}\nOutput: {job['output_root']}\nSettings: {resolve_settings(job['preset'])}\nSelected: {job.get('selected_files', 'All eligible files')}"
             )
@@ -996,12 +1036,16 @@ class ArchiveApp(App):
                     if code == 0 and self.suitability_required
                     else "Preflight finished. Check the Progress log, then return to Review to start."
                     if self.reviewed
-                    else "Processing finished. Check failed / kept-original records. Continue to Accept / cleanup for optional review or quality-tradeoff acceptance, then separate deletion approval."
+                    else "Processing finished. Open the saved archive summary to review outcomes."
                     if code == 0
                     else "Stopped. Review the saved job to resume; completed files are retained."
                     if code == 130
-                    else "Job failed. See the log; originals are retained."
+                    else "Job failed. Review the saved summary and log, correct the reported problem, then preflight the saved job again."
                 )
+                manifest = Path(snapshot["output_root"]) / "archive-manifest.json"
+                if execute and manifest.exists():
+                    status += "\n" + job_outcome(json.loads(manifest.read_text(encoding="utf-8")))
+                    status += f"\nSummary: {manifest.parent / 'archive-summary.html'}"
                 self.query_one("#status", Static).update(status)
             except (OSError, ValueError) as error:
                 self.reviewed = False
