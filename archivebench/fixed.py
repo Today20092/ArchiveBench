@@ -2,7 +2,6 @@
 
 import json
 import os
-import platform
 import shutil
 import statistics
 import subprocess
@@ -17,7 +16,7 @@ from .budget import deadline
 from .encoders import SPECS
 from .experiments import experiment_plan, fixed_settings
 from .formats import format_variants, output_video
-from .hardware import availability
+from .hardware import availability, inventory
 
 
 def frontier(rows: list[dict[str, Any]]) -> set[tuple[str, str, int]]:
@@ -166,23 +165,12 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 if str(path) not in sources:
                     publish("hashing", current_source=path.name)
                     sources[str(path)] = core.digest(path)
+            hardware = inventory(ffmpeg, ffprobe)
             environment = {
-                "platform": platform.platform(),
-                "cpu": platform.processor(),
-                "logical_cpus": os.cpu_count(),
+                **{key: hardware[key] for key in ("platform", "cpu", "logical_cpus")},
+                "hardware_identity": core.fingerprint(hardware),
+                "gpu_names": list(dict.fromkeys(device["name"] for device in hardware["devices"])),
             }
-            if shutil.which("nvidia-smi"):
-                try:
-                    environment["nvidia_gpu_driver_memory"] = core.run(
-                        [
-                            "nvidia-smi",
-                            "--query-gpu=name,driver_version,memory.total",
-                            "--format=csv,noheader,nounits",
-                        ],
-                        10,
-                    ).strip()
-                except (OSError, RuntimeError, subprocess.TimeoutExpired):
-                    environment["nvidia_gpu_driver_memory"] = "Unavailable"
             identity = core.fingerprint(
                 {
                     "config": config,
@@ -200,6 +188,7 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                             "formats.py",
                             "experiments.py",
                             "hardware.py",
+                            "hardware_limits.py",
                         )
                     },
                 }
@@ -216,7 +205,7 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
             can_save = True
             publish("capability checks")
             result["capabilities"] = availability(
-                config, seconds=min(30, max(0.1, work_end - time.monotonic()))
+                config, seconds=min(30, max(0.1, work_end - time.monotonic())), hardware=hardware
             )
             print(json.dumps(experiment_plan(config)), flush=True)
             contexts = {}
@@ -240,13 +229,18 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     None,
                 )
                 if rejected:
-                    item.update(status="failed", reason=rejected["reason"])
+                    item.update(
+                        status="failed",
+                        reason=rejected["reason"],
+                        capability=rejected.get("capability", {}),
+                    )
                     result["skipped"].append(
                         {
                             "sample": item["sample"],
                             "variant": item["variant"],
                             "encoder": item["encoder"],
                             "reason": rejected["reason"],
+                            "capability": rejected.get("capability", {}),
                         }
                     )
                     continue
@@ -384,6 +378,7 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                                 target["pix_fmt"],
                                 video,
                                 target,
+                                hardware,
                             ),
                             work_end - time.monotonic(),
                         )

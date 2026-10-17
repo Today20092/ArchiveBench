@@ -20,6 +20,7 @@ from .validation import quality_targets, shortlist, validation_sections
 from .experiments import experiment_plan
 from .budget import timeout as bounded_timeout, deadline as wall_deadline
 from .budget import capture
+from .hardware_limits import check_capability, require_capability
 
 
 def digest(path: Path) -> str:
@@ -164,7 +165,10 @@ def encode_args(
     pixel_format: str,
     video: dict[str, Any],
     target: dict[str, Any] | None = None,
+    hardware: dict[str, Any] | None = None,
 ) -> list[str]:
+    if hardware is not None:
+        require_capability(hardware, encoder, pixel_format)
     return [
         ffmpeg,
         "-hide_banner",
@@ -444,8 +448,8 @@ def benchmark(config_path: Path, output: Path) -> dict[str, Any]:
 
 
 def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
-    import platform
     import shutil
+    from .hardware import availability, inventory
 
     plan = experiment_plan(config)
     result: dict[str, Any] = {}
@@ -533,24 +537,13 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             )
             source_hashes[str(source)] = digest(source)
             publish("hashing", sources_hashed=len(source_hashes))
+    hardware = inventory(ffmpeg, ffprobe)
     environment: dict[str, Any] = {
-        "platform": platform.platform(),
-        "cpu": platform.processor(),
-        "logical_cpus": os.cpu_count(),
+        **{key: hardware[key] for key in ("platform", "cpu", "logical_cpus")},
+        "hardware_identity": fingerprint(hardware),
+        "gpu_names": list(dict.fromkeys(device["name"] for device in hardware["devices"])),
         "hardware_accelerators": run([ffmpeg, "-hwaccels"]).strip(),
     }
-    if shutil.which("nvidia-smi"):
-        try:
-            environment["nvidia_gpu_driver_memory"] = run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=name,driver_version,memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                10,
-            ).strip()
-        except (RuntimeError, subprocess.TimeoutExpired):
-            environment["nvidia_gpu_driver_memory"] = "Unavailable"
     identity = fingerprint(
         {
             "protocol": 1,
@@ -564,6 +557,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "validation_sha256": digest(Path(__file__).with_name("validation.py")),
             "experiments_sha256": digest(Path(__file__).with_name("experiments.py")),
             "hardware_sha256": digest(Path(__file__).with_name("hardware.py")),
+            "hardware_limits_sha256": digest(Path(__file__).with_name("hardware_limits.py")),
             "environment": environment,
         }
     )
@@ -596,10 +590,8 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             raise ValueError("Cached output missing/modified; use a new output folder")
     started = time.monotonic()
     budget = float(config["budget_minutes"]) * 60
-    from .hardware import availability
-
     publish("capability checks")
-    result["capabilities"] = availability(config, seconds=min(30, budget))
+    result["capabilities"] = availability(config, seconds=min(30, budget), hardware=hardware)
     stage = "tuning"
     tuning_budget = (
         budget * (1 - float(config.get("validation_reserve", 0.3)))
@@ -669,6 +661,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             pixel,
             video,
             target,
+            hardware,
         )
         pilot_started = time.monotonic()
         publish("pilot", current_candidate=key, measurement_stage=stage)
@@ -705,6 +698,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     pixel,
                     video,
                     target,
+                    hardware,
                 ),
                 remaining(),
             )
@@ -788,6 +782,24 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             video = inspect_source(path, float(sample["start"]), float(sample["seconds"]), ffprobe)
             target = output_video(video, config)
             pixel = target["pix_fmt"]
+            eligible = []
+            for encoder in chosen:
+                evidence = check_capability(hardware, encoder, pixel)
+                if evidence["status"] == "unsupported":
+                    skipped = {
+                        "sample": sample_id,
+                        "variant": variant_id,
+                        "encoder": encoder,
+                        "reason": evidence["reason"],
+                        "capability": evidence,
+                    }
+                    if skipped not in result["skipped"]:
+                        result["skipped"].append(skipped)
+                else:
+                    eligible.append(encoder)
+            save(result_path, result)
+            if not eligible:
+                continue
             reference_directory = output / sample_id
             reference_directory.mkdir(exist_ok=True)
             reference = reference_directory / "reference.mkv"
@@ -903,7 +915,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
         except subprocess.TimeoutExpired:
             break
         screen_video = {**video, "frames": screen_frames}
-        for encoder in chosen:
+        for encoder in eligible:
             if time.monotonic() - started >= deadline:
                 break
             if any(
@@ -964,6 +976,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         pixel,
                         video,
                         target,
+                        hardware,
                     ),
                     min(30, remaining()),
                 )

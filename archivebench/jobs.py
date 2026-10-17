@@ -19,6 +19,7 @@ from .formats import output_video, retention, scale_filter
 from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .mux import suffix, mux_args, stream_gaps
 from .hardware import inventory, failure_status
+from .hardware_limits import check_capability, require_capability
 
 
 def discover_job(output: Path) -> dict[str, Any] | None:
@@ -382,6 +383,10 @@ def inspect_job(
                     sample_check=scope["sample_check"],
                 )
                 target = output_video(video, settings)
+                row["capability"] = check_capability(
+                    hardware, settings["encoder"], target["pix_fmt"]
+                )
+                require_capability(hardware, settings["encoder"], target["pix_fmt"])
                 policy = retention(settings)
                 with preflight_scratch(output) as scratch:
                     args = [ffmpeg, "-v", "error", "-nostdin", "-i", str(path), "-map", "0:v:0"]

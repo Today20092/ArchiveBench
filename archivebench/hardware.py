@@ -16,6 +16,7 @@ from . import core
 from .budget import deadline
 from .encoders import SPECS, discover, options
 from .formats import PIXEL_FORMATS, format_variants, output_video
+from .hardware_limits import add_limits, check_capability
 
 PROBE_FRAMES = 3
 PROBE_SECONDS = 10
@@ -56,6 +57,7 @@ def _inventory(ffmpeg: str, ffprobe: str) -> dict[str, Any]:
         }
     configured, other = discover(core.run([ffmpeg, "-encoders"], 5))
     devices, errors = [], []
+    cpu = platform.processor()
     if shutil.which("nvidia-smi"):
         try:
             raw = core.run(
@@ -66,10 +68,11 @@ def _inventory(ffmpeg: str, ffprobe: str) -> dict[str, Any]:
                 ],
                 5,
             )
+            nvidia = []
             for row in csv.reader(raw.splitlines(), skipinitialspace=True):
-                if len(row) != 6:
+                if len(row) != 6 or not row[0].isdigit():
                     raise ValueError("Unexpected nvidia-smi inventory")
-                devices.append(
+                nvidia.append(
                     dict(
                         zip(
                             ("index", "uuid", "name", "pci_device_id", "driver", "memory_mib"), row
@@ -77,10 +80,11 @@ def _inventory(ffmpeg: str, ffprobe: str) -> dict[str, Any]:
                         vendor="NVIDIA",
                     )
                 )
+            devices.extend(nvidia)
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
             errors.append(f"NVIDIA inventory unavailable: {error}")
     # Include integrated/other vendors as well; AdapterRAM is not reliable for large VRAM.
-    if os.name == "nt":
+    if platform.system() == "Windows":
         try:
             raw = core.run(
                 [
@@ -104,19 +108,64 @@ def _inventory(ffmpeg: str, ffprobe: str) -> dict[str, Any]:
                 )
         except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired) as error:
             errors.append(f"Display inventory unavailable: {error}")
-    return {
-        "platform": platform.platform(),
-        "cpu": platform.processor(),
-        "logical_cpus": os.cpu_count(),
-        "devices": devices,
-        "inventory_errors": errors,
-        "tools": tools,
-        "configured": configured,
-        "unconfigured": other,
-        "libvmaf": "libvmaf" in core.run([ffmpeg, "-filters"], 5),
-        "decode": {"mode": "software", "hardware_support": "not-probed"},
-        "device_selection": "existing FFmpeg adapter default; not a per-device certification",
-    }
+        try:
+            cpu = (
+                core.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name",
+                    ],
+                    5,
+                ).strip()
+                or cpu
+            )
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            pass
+    if platform.system() == "Darwin":
+        try:
+            cpu = core.run(["sysctl", "-n", "machdep.cpu.brand_string"], 5).strip()
+            displays = json.loads(core.run(["system_profiler", "SPDisplaysDataType", "-json"], 5))
+            for row in displays.get("SPDisplaysDataType", []):
+                devices.append({"name": row.get("sppci_model", "Unknown"), "vendor": "Apple"})
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            AttributeError,
+            RuntimeError,
+            subprocess.TimeoutExpired,
+        ):
+            errors.append("Apple display inventory unavailable")
+    return add_limits(
+        {
+            "platform": platform.platform(),
+            "cpu": cpu,
+            "apple_chip": cpu if platform.system() == "Darwin" else None,
+            "logical_cpus": os.cpu_count(),
+            "devices": devices,
+            "inventory_errors": errors,
+            "tools": tools,
+            "configured": configured,
+            "unconfigured": other,
+            "libvmaf": "libvmaf" in core.run([ffmpeg, "-filters"], 5),
+            "decode": {"mode": "software", "hardware_support": "not-probed"},
+            "device_selection": "existing FFmpeg adapter default; not a per-device certification",
+            "capability_table_sha256": core.digest(Path(__file__).with_name("hardware_limits.py")),
+            "driver_query_sha256": {
+                name: core.digest(Path(__file__).with_name(name))
+                for name in (
+                    "driver_query.py",
+                    "_driver_nvidia.py",
+                    "_driver_amd.py",
+                    "_driver_apple.py",
+                )
+            },
+        },
+        core.run,
+    )
 
 
 def failure_status(message: str) -> str:
@@ -185,8 +234,10 @@ def probe_encode(
         "controls": controls,
     }
     row = {**request, "status": "unknown", "cached": False}
-    if encoder not in hardware["configured"]:
-        return {**row, "status": "unsupported", "reason": "Not present in FFmpeg build"}
+    evidence = check_capability(hardware, encoder, pixel)
+    row["capability"] = evidence
+    if evidence["status"] == "unsupported":
+        return {**row, "status": "unsupported", "reason": evidence["reason"]}
     identity = core.fingerprint(
         {
             "protocol": 1,
@@ -309,7 +360,11 @@ def probe_encode(
 
 
 def check_config(
-    config: dict[str, Any], *, refresh: bool = False, seconds: float = 30
+    config: dict[str, Any],
+    *,
+    refresh: bool = False,
+    seconds: float = 30,
+    hardware: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Report every requested combination; exhausted checks are explicitly unknown."""
     from .experiments import fixed_settings
@@ -318,7 +373,8 @@ def check_config(
     parent = deadline.get()
     token = deadline.set(min(parent, end) if parent is not None else end)
     try:
-        hardware = inventory(config.get("ffmpeg", "ffmpeg"), config.get("ffprobe", "ffprobe"))
+        if hardware is None:
+            hardware = inventory(config.get("ffmpeg", "ffmpeg"), config.get("ffprobe", "ffprobe"))
         encoders = config.get("encoders") or hardware["configured"]
         settings = (
             fixed_settings({**config, "encoders": encoders})
@@ -367,7 +423,16 @@ def check_config(
                             video["avg_frame_rate"],
                         )
                         if key not in seen:
-                            if time.monotonic() >= (deadline.get() or end):
+                            evidence = check_capability(hardware, encoder, target["pix_fmt"])
+                            if evidence["status"] == "unsupported":
+                                seen[key] = {
+                                    "encoder": encoder,
+                                    "quality": quality,
+                                    "status": "unsupported",
+                                    "reason": evidence["reason"],
+                                    "capability": evidence,
+                                }
+                            elif time.monotonic() >= (deadline.get() or end):
                                 seen[key] = {
                                     "encoder": encoder,
                                     "quality": quality,
@@ -411,11 +476,15 @@ def check_config(
 
 
 def availability(
-    config: dict[str, Any], *, refresh: bool = False, seconds: float = 30
+    config: dict[str, Any],
+    *,
+    refresh: bool = False,
+    seconds: float = 30,
+    hardware: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Inventory failure must not masquerade as an unsupported encoder."""
     try:
-        return check_config(config, refresh=refresh, seconds=seconds)
+        return check_config(config, refresh=refresh, seconds=seconds, hardware=hardware)
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired) as error:
         return {"checks": [], "verified_encoders": [], "status": "unknown", "reason": str(error)}
 

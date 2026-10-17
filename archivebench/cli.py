@@ -18,6 +18,7 @@ from .experiments import experiment_plan
 from .jobs import create_job, discover_job, resume_destination, run_job
 from .review import inspect_review, launch_review, prepare_review, record_review, saved_reviews
 from .acceptance import inspect_acceptance, record_acceptance
+from .hardware_limits import check_capability, LAYOUTS
 
 
 def wizard(config_path: Path, comparison: str = "initial", strategy: str = "tune") -> None:
@@ -470,8 +471,13 @@ def main() -> None:
                 value = availability(config, refresh=args.refresh)
             else:
                 value = inventory()
+                value["format_checks"] = [
+                    check_capability(value, encoder, pixel)
+                    for encoder in value["configured"]
+                    for pixel in LAYOUTS
+                ]
                 value["note"] = (
-                    "Listed adapters are not verified capabilities. Use doctor --config CONFIG for bounded exact-format probes."
+                    "Hardware/FFmpeg limits exclude known unsupported formats. Remaining candidates need doctor --config CONFIG for bounded exact-format probes."
                 )
             print(json.dumps(value, indent=2))
         elif args.command == "scan":
