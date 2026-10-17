@@ -8,6 +8,8 @@ Preserve originals during benchmarking and archive encoding. After a finished jo
 
 For code changes, run pytest, Ruff format/check, ty and the report math tests through the commands in [docs/development.md](docs/development.md). Pin uv to Python 3.11 for the minimum-runtime check. For report changes, rebuild the bundled JS and run the offline browser, native-still and playback checks. Keep generated media, local configs, logs and private paths out of Git.
 
+Before creating or merging any pull request, complete the [documentation review](docs/development.md#pull-request-documentation-review). For substantial user-facing changes, assign a documentation subagent to update the README and guides, following the documented exceptions.
+
 ## Agent skills
 
 For planning, creating or implementing tickets, use the local Markdown tracker described in [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).

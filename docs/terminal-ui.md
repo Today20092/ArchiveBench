@@ -16,11 +16,9 @@ On Windows, the Send to installer defaults to the standard console host, even wh
 
 Regular terminal commands keep your existing window size. Advanced options explain container, timecode and other data policies separately.
 
-The interface has **Clips → Settings → Review → Progress**, followed by **Accept / cleanup** after processing ends. Use the tabs or Back/Next. Settings shows a concise preset summary and destination; container, timecode and data policies are under Advanced. Review separates the selected clip count, source, destination and audio policy. Preflight must succeed before Start becomes available.
+The interface has **Setup / compare → Clips → Settings → Review → Progress**, followed by **Accept / cleanup** after processing ends. Setup offers a representative-footage comparison; you can instead choose a built-in starter or saved preset. Use the tabs or Back/Next. Settings shows a concise preset summary and destination; container, timecode and data policies are under Advanced. Review separates the selected clip count, source, destination and audio policy. Preflight must succeed before Start becomes available.
 
 Summaries update when selections or settings change; navigating between tabs does not rebuild them.
-
-The current code reads clip durations in the background and shows their selected total. The preset table estimates video encoding time from that duration and the preset's measured historical rate. Missing rates or durations remain explicit. These estimates exclude audio processing, preflight and verification; different footage or hardware may change actual time. This addition is still in progress in the local tracker, so its validation is not claimed complete here.
 
 Choosing **AAC audio** reveals bitrate per channel, with the stereo equivalent shown beside each choice. For example, 128 kbps per channel means 256 kbps for a stereo track. The default remains 192 kbps per channel. Copy audio leaves the original audio encoding unchanged. The selected bitrate is saved in the job and reused on resume.
 
@@ -28,15 +26,15 @@ Run `archivebench-tui` to open an empty session, or pass folders and clips:
 
 ```powershell
 archivebench-tui --preset-directory "D:\Archive Presets" "D:\Project\SD 1" "D:\Project\SD 2"
-archivebench-tui --job "D:\Project\Archived Footage.job.json"
+archivebench-tui --job "D:\Project\Archived Footage\archive-job.json"
 ```
 
 ## Select, review and run
 
 1. **Sources:** paste a folder or clip path and choose Add folder/file. Repeat to add more. Space toggles clips; Select all/none changes the batch. Overlaps are deduplicated. The source base determines preserved relative output paths; review the destination when adding unrelated folders. Sources must share one drive.
 2. **Preset:** choose a saved JSON preset. Read encoder/quality/chroma and tested scope. Choose output container, audio, timecode and other-data policy explicitly. The saved preset's other retention policies remain intact.
-3. **Review:** review/preflight saves an immutable `.job.json`, prints exact settings and runs compatibility checks in the background. Existing saved-job input takes priority over new-job controls. Start remains disabled until preflight succeeds and any required suitability acceptance is recorded. For new or saved jobs outside historical scope, explicitly check **Accept uncertain suitability** in Settings and preflight again. The [consent record](archiving.md) survives a matching resume and is separate from actual visual/editor review and deletion approval. On incompatibility, Settings lists actually probed bundled alternatives and failed candidates/reasons; choose one explicitly, match its settings/policy and preflight again. Plan estimates are only as reliable as the preset's historical evidence; missing estimates are not invented.
-4. **Run:** Start/resume launches the same engine used by the CLI. Output and progress are retained beside the job in `.job.json.log`. A finished process can still contain failed or kept-original clips; inspect the report in the log. Visual/editor acceptance is never inferred.
+3. **Review:** review/preflight saves an immutable job snapshot, prints exact settings and runs compatibility checks in the background. New TUI jobs use `archive-job.json` inside the destination; existing adjacent `.job.json` files remain supported. Existing saved-job input takes priority over new-job controls. Start remains disabled until preflight succeeds and any required suitability acceptance is recorded. For new or saved jobs outside historical scope, explicitly check **Accept uncertain suitability** in Settings and preflight again. The [consent record](archiving.md) survives a matching resume and is separate from actual visual/editor review and deletion approval. On incompatibility, Settings lists actually probed bundled alternatives and failed candidates/reasons; choose one explicitly, match its settings/policy and preflight again. Plan estimates are only as reliable as the preset's historical evidence; missing estimates are not invented.
+4. **Run:** Start/resume launches the same engine used by the CLI. Output and progress are retained in a log beside the job. A finished process can still contain failed or kept-original clips; inspect the offline `archive-summary.html` in the destination for completed and unfinished work. Visual/editor acceptance is never inferred.
 
 **Stop** asks for confirmation. During encoding the engine stops and waits for its owned FFmpeg process. Preflight, hashing or verification may finish their current operation first; the UI says stopping until the worker exits. Keep the terminal open during this wait. Completed verified files remain; interrupted files restart from the beginning. Ctrl+Q and Ctrl+C request safe exit through the same confirmation. Load the exact saved job and run Review then Start to resume. Source/output hash and settings checks remain enforced. Forced terminal closure is not a substitute for the Stop action; abnormal termination may require investigating a stale lock.
 
