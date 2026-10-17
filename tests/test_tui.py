@@ -22,11 +22,22 @@ from archivebench.selection import selected_job
 from archivebench.tui import ArchiveApp
 
 
+def test_tui_ignores_change_events_before_mount(tmp_path):
+    app = ArchiveApp(library=tmp_path / "empty-library")
+    app.on_input_changed(Input.Changed(Input(id="output"), "archive"))
+    app.on_selection_list_selected_changed()
+    app.on_checkbox_changed(Checkbox.Changed(Checkbox(id="scope-accept"), True))
+    app.on_select_changed(Select.Changed(Select([], id="preset"), str(app.preset_paths[0])))
+    assert not app.ui_ready
+    assert not app.reviewed
+
+
 def test_tui_starters_available_without_saved_presets(tmp_path):
     async def exercise():
         app = ArchiveApp(library=tmp_path / "empty-library")
         async with app.run_test(size=(120, 60)) as pilot:
             await pilot.pause()
+            assert app.ui_ready
             table = app.query_one("#preset-table", DataTable)
             assert table.row_count == 4
             app.query_one("#preset", Select).value = str(app.preset_paths[0])

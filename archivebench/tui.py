@@ -161,6 +161,7 @@ class ArchiveApp(App):
         self.reviewed = False
         self.suitability_required = False
         self.busy = False
+        self.ui_ready = False
         self.process: asyncio.subprocess.Process | None = None
         self.stop_pending = False
         self.quit_pending = False
@@ -412,6 +413,8 @@ class ArchiveApp(App):
             table.add_row(Text(name), *cells[:3], "Select clips", *cells[3:], key=str(path))
         table.cursor_foreground_priority = "renderable"
         self.query_one("#aac-options").display = False
+        self.ui_ready = True
+        self.refresh_summary()
         if self.sources:
             self.scan(self.sources)
 
@@ -449,13 +452,15 @@ class ArchiveApp(App):
         )
 
     def on_input_changed(self, event: Input.Changed):
-        if not self.busy:
+        if self.ui_ready and not self.busy:
             if event.input.id in ("output", "saved-job"):
                 self.query_one("#scope-accept", Checkbox).value = False
             self.query_one("#comparison-start", Button).disabled = True
             self.invalidate()
 
     def on_selection_list_selected_changed(self):
+        if not self.ui_ready:
+            return
         self.query_one("#comparison-start", Button).disabled = True
         self.query_one("#scope-accept", Checkbox).value = False
         self.refresh_estimates()
@@ -463,7 +468,7 @@ class ArchiveApp(App):
             self.invalidate()
 
     def on_checkbox_changed(self, event: Checkbox.Changed):
-        if not self.busy:
+        if self.ui_ready and not self.busy:
             self.invalidate()
 
     def refresh_estimates(self):
@@ -510,7 +515,7 @@ class ArchiveApp(App):
             self.refresh_estimates()
 
     def on_select_changed(self, event: Select.Changed):
-        if self.busy:
+        if not self.ui_ready or self.busy:
             return
         self.invalidate()
         if event.select.id in ("preset", "container", "audio", "timecode", "data", "aac-bitrate"):
