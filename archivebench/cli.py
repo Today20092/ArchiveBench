@@ -9,6 +9,7 @@ from pathlib import Path
 from .archive import archive, candidates, cleanup
 from .core import benchmark, primary, probe, run, save, validate_config
 from .encoders import discover
+from .hardware import DEFAULT_ENCODERS, availability, inventory, suggested_encoders
 from .report import write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
@@ -38,12 +39,9 @@ def wizard(config_path: Path, comparison: str = "initial", strategy: str = "tune
         if strategy == "tune"
         else "quick"
     )
+    encoder_choice = input("Encoders, comma-separated [auto: verified choices; or all]: ").strip()
     encoders = [
-        value.strip()
-        for value in (
-            input("Encoders, comma-separated [libx265,libsvtav1,hevc_nvenc; or all]: ").strip()
-            or "libx265,libsvtav1,hevc_nvenc"
-        ).split(",")
+        value.strip() for value in (encoder_choice or "libx265,libsvtav1,hevc_nvenc").split(",")
     ]
     if encoders == ["all"]:
         if strategy == "fixed":
@@ -145,6 +143,20 @@ def wizard(config_path: Path, comparison: str = "initial", strategy: str = "tune
         "samples": samples,
         "encoders": encoders,
     }
+    print(
+        "Checking hardware and exact output formats: up to 3 synthetic frames per setting, 10 seconds per probe, 30 seconds total. No footage is encoded."
+    )
+    check = {**config, "strategy": strategy}
+    if not encoder_choice:
+        check["encoders"] = list(DEFAULT_ENCODERS)
+    capabilities = availability(check)
+    print(json.dumps(capabilities, indent=2))
+    if not encoder_choice:
+        config["encoders"] = suggested_encoders(capabilities)
+        if not config["encoders"]:
+            raise ValueError(
+                "No verified defaults. Review doctor --config output or rerun setup with explicit encoders; no format was changed."
+            )
     if strategy == "fixed":
         from .experiments import fixed_settings
 
@@ -221,7 +233,15 @@ def main() -> None:
         default="fixed",
         help="Fixed settings by default; tune opts into VMAF target searches",
     )
-    commands.add_parser("doctor", help="List installed encoders and quality scoring support")
+    doctor = commands.add_parser(
+        "doctor", help="Inspect hardware; optionally probe exact configured encode formats"
+    )
+    doctor.add_argument(
+        "--config", type=Path, help="Probe this config with synthetic frames (30 seconds total)"
+    )
+    doctor.add_argument(
+        "--refresh", action="store_true", help="Bypass cached capability observations"
+    )
     scan = commands.add_parser(
         "scan", help="List eligible clips; proxies/generated archives excluded"
     )
@@ -444,19 +464,16 @@ def main() -> None:
         elif args.command == "setup":
             wizard(args.config, args.comparison, args.strategy)
         elif args.command == "doctor":
-            supported, other = discover(run(["ffmpeg", "-encoders"]))
-            print(
-                json.dumps(
-                    {
-                        "ffmpeg": run(["ffmpeg", "-version"]).splitlines()[0],
-                        "libvmaf": "libvmaf" in run(["ffmpeg", "-filters"]),
-                        "configured": supported,
-                        "unconfigured": other,
-                        "note": "Encoder listing is followed by an actual compatibility probe during benchmark",
-                    },
-                    indent=2,
+            if args.config:
+                config = json.loads(args.config.read_text(encoding="utf-8"))
+                validate_config(config)
+                value = availability(config, refresh=args.refresh)
+            else:
+                value = inventory()
+                value["note"] = (
+                    "Listed adapters are not verified capabilities. Use doctor --config CONFIG for bounded exact-format probes."
                 )
-            )
+            print(json.dumps(value, indent=2))
         elif args.command == "scan":
             print(json.dumps([str(path) for path in candidates(args.source.resolve())], indent=2))
         elif args.command == "benchmark":

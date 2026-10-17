@@ -18,6 +18,7 @@ from .encoders import options
 from .formats import output_video, retention, scale_filter
 from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
 from .mux import suffix, mux_args, stream_gaps
+from .hardware import inventory, failure_status
 
 
 def discover_job(output: Path) -> dict[str, Any] | None:
@@ -286,8 +287,15 @@ def inspect_job(
     ffprobe: str = "ffprobe",
     ffmpeg: str = "ffmpeg",
     alternatives: list[Path] | None = None,
+    *,
+    hardware: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_job(job)
+    if hardware is None:
+        try:
+            hardware = inventory(ffmpeg, ffprobe)
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            hardware = {"status": "unknown", "reason": str(error)}
     source, output = safe(Path(job["source_root"])), safe(Path(job["output_root"]))
     if not source.is_dir() or source == output or source.is_relative_to(output):
         raise ValueError("Invalid job roots")
@@ -441,7 +449,9 @@ def inspect_job(
                 row.update(
                     action="keep-original",
                     output=None,
-                    compatibility="unsupported",
+                    compatibility="unsupported"
+                    if isinstance(error, ValueError)
+                    else failure_status(str(error)),
                     gaps=[str(error)],
                 )
         rows.append(row)
@@ -452,6 +462,7 @@ def inspect_job(
         ancestor = ancestor.parent
     result = {
         "files": rows,
+        "hardware": hardware,
         "completed_deletions": list(deleted.values()),
         "preflight": {
             "maximum_frames_per_file": 1,
@@ -474,7 +485,7 @@ def inspect_job(
     }
     if alternatives is None:
         alternatives = starter_paths()
-    if alternatives and any(row["compatibility"] == "unsupported" for row in rows):
+    if alternatives and any(row["gaps"] for row in rows):
         result["alternative_selection"] = (
             "Select an alternative explicitly and preflight the new job; current job remains unchanged"
         )
@@ -493,16 +504,25 @@ def inspect_job(
             candidate["preset"] = document
             item = {"path": str(path), "preset": document}
             try:
-                checked = inspect_job(candidate, ffprobe, ffmpeg, alternatives=[])
+                checked = inspect_job(
+                    candidate, ffprobe, ffmpeg, alternatives=[], hardware=hardware
+                )
                 item.update(
                     compatibility="short probes passed for all selected encodes"
-                    if all(row["compatibility"] != "unsupported" for row in checked["files"])
-                    else "unsupported",
+                    if all(not row["gaps"] for row in checked["files"])
+                    else "unsupported"
+                    if any(row["compatibility"] == "unsupported" for row in checked["files"])
+                    else "probe-failed",
                     files=checked["files"],
                     estimates=checked["estimates"],
                 )
             except (ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
-                item.update(compatibility="unsupported", gaps=[str(error)])
+                item.update(
+                    compatibility="unsupported"
+                    if isinstance(error, ValueError)
+                    else failure_status(str(error)),
+                    gaps=[str(error)],
+                )
             result["alternatives"].append(item)
     return result
 

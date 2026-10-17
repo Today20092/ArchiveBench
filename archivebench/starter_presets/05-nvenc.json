@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "type": "archive-preset",
+  "name": "Faster encoding (NVIDIA HEVC)",
+  "description": "Built-in unmeasured NVIDIA HEVC starter using P5/HQ and CQ 31, intended for hardware encoding speed. Actual speed, quality and size are unknown. Preserves the source format; many GPUs cannot encode 4:2:2. Hardware and exact-format verification are required. No fallback or automatic chroma conversion. Benchmark representative footage when possible.",
+  "settings": {
+    "version": 2,
+    "type": "archive-settings",
+    "encoder": "hevc_nvenc",
+    "quality": 31,
+    "pixel_format": "source",
+    "resolution": "original",
+    "audio_mode": "copy",
+    "drop_audio_tracks": [],
+    "evidence_status": "unmeasured-starter"
+  },
+  "encoder_options": [
+    "-c:v",
+    "hevc_nvenc",
+    "-preset",
+    "p5",
+    "-tune",
+    "hq",
+    "-rc",
+    "vbr",
+    "-b:v",
+    "0",
+    "-cq",
+    "31",
+    "-pix_fmt",
+    "yuv420p"
+  ],
+  "scope": {
+    "environment": {},
+    "footage": []
+  },
+  "evidence": {
+    "settings_fingerprint": "{\"audio_mode\":\"copy\",\"drop_audio_tracks\":[],\"encoder\":\"hevc_nvenc\",\"evidence_status\":\"unmeasured-starter\",\"pixel_format\":\"source\",\"quality\":31,\"resolution\":\"original\",\"type\":\"archive-settings\",\"version\":2}",
+    "benchmark_identity": null,
+    "measurement_status": "unmeasured-starter",
+    "visual_status": "unreviewed",
+    "estimates": {
+      "basis": "unknown",
+      "coverage": [],
+      "exclusions": [
+        "retained streams",
+        "verification",
+        "untested footage"
+      ]
+    }
+  }
+}

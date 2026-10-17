@@ -563,6 +563,7 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             "formats_sha256": digest(Path(__file__).with_name("formats.py")),
             "validation_sha256": digest(Path(__file__).with_name("validation.py")),
             "experiments_sha256": digest(Path(__file__).with_name("experiments.py")),
+            "hardware_sha256": digest(Path(__file__).with_name("hardware.py")),
             "environment": environment,
         }
     )
@@ -595,6 +596,10 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
             raise ValueError("Cached output missing/modified; use a new output folder")
     started = time.monotonic()
     budget = float(config["budget_minutes"]) * 60
+    from .hardware import availability
+
+    publish("capability checks")
+    result["capabilities"] = availability(config, seconds=min(30, budget))
     stage = "tuning"
     tuning_budget = (
         budget * (1 - float(config.get("validation_reserve", 0.3)))
@@ -915,6 +920,27 @@ def _benchmark(config: dict[str, Any], output: Path) -> dict[str, Any]:
                         "variant": variant_id,
                         "encoder": encoder,
                         "reason": "Not present in FFmpeg build",
+                    }
+                )
+                continue
+            rejected = next(
+                (
+                    r
+                    for r in result["capabilities"]["checks"]
+                    if r["source"] == sample["path"]
+                    and r["variant"] == variant_id
+                    and r["encoder"] == encoder
+                    and r["status"] == "unsupported"
+                ),
+                None,
+            )
+            if rejected:
+                result["skipped"].append(
+                    {
+                        "sample": sample_id,
+                        "variant": variant_id,
+                        "encoder": encoder,
+                        "reason": rejected["reason"],
                     }
                 )
                 continue

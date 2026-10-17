@@ -2,7 +2,7 @@
   "version": 1,
   "type": "archive-preset",
   "name": "Balanced",
-  "description": "Built-in starter, untested on your footage. Middle HEVC starting setting, using ArchiveBench's existing encoder default. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
+  "description": "Built-in unmeasured CPU HEVC starter: x265 medium, CRF 24. General starting choice preserving source format and dimensions. Medium is x265's documented speed/efficiency compromise; CRF 24 is ArchiveBench's starting policy, not a quality guarantee. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
   "settings": {
     "version": 2,
     "type": "archive-settings",

@@ -2,7 +2,7 @@
   "version": 1,
   "type": "archive-preset",
   "name": "Quality priority",
-  "description": "Built-in starter, untested on your footage. Lower HEVC CRF requests less compression than the other HEVC starters; larger files may result. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
+  "description": "Built-in unmeasured CPU HEVC starter: x265 medium, CRF 20. Lower CRF requests less compression than the other CPU HEVC starters; larger files may result. Medium balances encoding effort and compression efficiency. Preserves source format and dimensions. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
   "settings": {
     "version": 2,
     "type": "archive-settings",

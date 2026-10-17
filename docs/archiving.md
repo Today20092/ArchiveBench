@@ -12,6 +12,23 @@ Use [the terminal UI](terminal-ui.md) to select clips, choose a destination and 
 
 For reusable folder jobs, follow [editor reopening and replacement acceptance](editor-acceptance.md). The job workflow requires an identity-bound replacement decision: actual visual/editor attestations or explicit quality-tradeoff acceptance without inspection, followed by separate cleanup approval after processing ends. Legacy manifests keep their existing documented handling.
 
+## Built-in starter presets
+
+Run `archivebench preset list` for installed paths, then export a starter to your own preset folder. These are research-informed **unmeasured starters**. They have no footage-specific quality, size or timing evidence and do not replace a short comparison or your review.
+
+| Starter | Encoder and controls | Intended tradeoff |
+| --- | --- | --- |
+| Quality priority | CPU HEVC `libx265`, medium, CRF 20 | Prefer quality within the HEVC starter range; larger output is likely. |
+| Balanced | CPU HEVC `libx265`, medium, CRF 24 | General starting point for comparing quality and storage. |
+| Space priority | CPU HEVC `libx265`, medium, CRF 28 | More compression within that range; inspect detail and noise carefully. |
+| Balanced (AVC alternative) | CPU H.264 `libx264`, medium, CRF 23 | An AVC option when that codec suits the playback or editing workflow. |
+| Faster encoding (NVIDIA HEVC) | `hevc_nvenc`, p5, HQ, VBR, CQ 31 | A hardware option for supported source formats; verify availability locally. |
+| AV1 alternative (CPU) | `libsvtav1`, preset 6, CRF 30 | A CPU AV1 option to compare for compression and encode time. |
+
+All starters preserve source resolution, frame rate, bit depth and chroma and copy all audio tracks. A starter's encoder may not support the source format: for example, preserving 4:2:2 can rule out an NVIDIA HEVC device or the SVT-AV1 encoder. Choose a compatible encoder or an explicit format reduction; no starter silently converts 4:2:2 to 4:2:0. Numeric CRF/CQ values do not indicate equivalent quality across encoders. Hardware speed, file size, decoder support and editor compatibility must be checked on your machine and footage.
+
+See [hardware availability](hardware.md) for the distinction between installed encoders, successful format probes and measured performance. Your existing saved presets and job snapshots retain their settings when the bundled catalog changes.
+
 ## Reusable project jobs
 
 Once you have chosen presets, use these jobs on future folders without repeating the benchmark. The optional [Windows Send to launcher](windows-send-to.md) performs the same operation through Explorer.

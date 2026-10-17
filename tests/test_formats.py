@@ -74,6 +74,10 @@ def test_metadata_and_attachment_loss_blocks_verification():
 def test_wizard_saves_retention_and_video_choices(tmp_path, monkeypatch, capsys):
     import archivebench.cli as cli
 
+    monkeypatch.setattr(
+        cli, "availability", lambda _: {"checks": [], "verified_encoders": ["libx265"]}
+    )
+
     source = tmp_path / "source.mov"
     source.touch()
     monkeypatch.setattr(
@@ -131,6 +135,10 @@ def test_wizard_saves_retention_and_video_choices(tmp_path, monkeypatch, capsys)
 def test_wizard_defaults_to_only_match_source(tmp_path, monkeypatch, capsys):
     import archivebench.cli as cli
 
+    monkeypatch.setattr(
+        cli, "availability", lambda _: {"checks": [], "verified_encoders": ["libx265"]}
+    )
+
     source = tmp_path / "source.mov"
     source.touch()
     monkeypatch.setattr(
@@ -150,7 +158,7 @@ def test_wizard_defaults_to_only_match_source(tmp_path, monkeypatch, capsys):
     config = json.loads(settings.read_text())
     assert config["encode_repeats"] == 1
     assert config["comparison"] == "initial"
-    assert config["encoders"] == ["libx265", "libsvtav1", "hevc_nvenc"]
+    assert config["encoders"] == ["libx265"]
     assert config["variants"] == [
         {
             "id": "match-source",

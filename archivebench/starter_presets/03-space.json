@@ -2,7 +2,7 @@
   "version": 1,
   "type": "archive-preset",
   "name": "Space priority",
-  "description": "Built-in starter, untested on your footage. Higher HEVC CRF requests stronger compression with more quality loss; this does not reduce resolution or color format. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
+  "description": "Built-in unmeasured CPU HEVC starter: x265 medium, CRF 28. Higher CRF requests stronger compression with more quality loss than the other CPU HEVC starters; source format and dimensions remain unchanged. CRF 28 is x265's upstream default, not a guarantee for camera originals. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
   "settings": {
     "version": 2,
     "type": "archive-settings",

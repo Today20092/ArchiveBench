@@ -2,7 +2,7 @@
   "version": 1,
   "type": "archive-preset",
   "name": "Balanced (AVC alternative)",
-  "description": "Built-in starter, untested on your footage. Explicit H.264 CPU alternative when HEVC is unavailable or unsuitable. CRF 23 is not quality-equivalent to HEVC CRF 24. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
+  "description": "Built-in unmeasured CPU H.264 alternative: x264 medium, CRF 23. Preserves source format and dimensions; 10-bit or 4:2:2 H.264 may have limited player/editor support. CRF 23 is not quality-equivalent to HEVC CRF 24. Benchmark representative footage when possible. Quality, output size and encoding time are unknown. No fallback: choose another preset explicitly if preflight rejects this encoder or format.",
   "settings": {
     "version": 2,
     "type": "archive-settings",

@@ -183,9 +183,9 @@ def test_preflight_preserves_unsupported_files(tmp_path):
     job = create_job(source, tmp_path / "output", preset)
     plan = inspect_job(job)
     assert plan["files"][0]["action"] == "keep-original"
-    assert plan["files"][0]["compatibility"] == "unsupported"
+    assert plan["files"][0]["compatibility"] == "probe-failed"
     assert plan["files"][0]["gaps"]
-    assert all(item["compatibility"] == "unsupported" for item in plan["alternatives"])
+    assert all(item["compatibility"] == "probe-failed" for item in plan["alternatives"])
     assert all(item["files"][0]["gaps"] for item in plan["alternatives"])
     assert not (tmp_path / "output").exists()
 

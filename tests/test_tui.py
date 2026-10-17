@@ -39,11 +39,11 @@ def test_tui_starters_available_without_saved_presets(tmp_path):
             await pilot.pause()
             assert app.ui_ready
             table = app.query_one("#preset-table", DataTable)
-            assert table.row_count == 4
+            assert table.row_count == 6
             app.query_one("#preset", Select).value = str(app.preset_paths[0])
             await pilot.pause()
             assert "Quality priority" in str(app.query_one("#summary", Static).content)
-            assert "untested on your footage" in str(app.query_one("#summary", Static).content)
+            assert "unmeasured" in str(app.query_one("#summary", Static).content)
             assert app.query_one("#preset-technical", Collapsible).collapsed
             details = str(app.query_one("#preset-details", Static).content)
             assert "CRF 20" in details
