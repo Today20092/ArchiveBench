@@ -17,6 +17,7 @@ from .budget import deadline
 from .encoders import SPECS
 from .experiments import experiment_plan, fixed_settings
 from .formats import format_variants, output_video
+from .hardware import availability
 
 
 def frontier(rows: list[dict[str, Any]]) -> set[tuple[str, str, int]]:
@@ -171,14 +172,17 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 "logical_cpus": os.cpu_count(),
             }
             if shutil.which("nvidia-smi"):
-                environment["nvidia_gpu_driver_memory"] = core.run(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=name,driver_version,memory.total",
-                        "--format=csv,noheader,nounits",
-                    ],
-                    10,
-                ).strip()
+                try:
+                    environment["nvidia_gpu_driver_memory"] = core.run(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=name,driver_version,memory.total",
+                            "--format=csv,noheader,nounits",
+                        ],
+                        10,
+                    ).strip()
+                except (OSError, RuntimeError, subprocess.TimeoutExpired):
+                    environment["nvidia_gpu_driver_memory"] = "Unavailable"
             identity = core.fingerprint(
                 {
                     "config": config,
@@ -195,6 +199,7 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                             "encoders.py",
                             "formats.py",
                             "experiments.py",
+                            "hardware.py",
                         )
                     },
                 }
@@ -209,6 +214,10 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                 ):
                     raise ValueError("Cached output missing/modified; use a new output folder")
             can_save = True
+            publish("capability checks")
+            result["capabilities"] = availability(
+                config, seconds=min(30, max(0.1, work_end - time.monotonic()))
+            )
             print(json.dumps(experiment_plan(config)), flush=True)
             contexts = {}
             blocked = set()
@@ -217,6 +226,30 @@ def benchmark_fixed(config: dict[str, Any], output: Path) -> dict[str, Any]:
                     continue
                 if time.monotonic() >= work_end:
                     break
+                requested_source = config["samples"][int(item["sample"].split("-")[-1]) - 1]["path"]
+                rejected = next(
+                    (
+                        r
+                        for r in result["capabilities"]["checks"]
+                        if r["source"] == requested_source
+                        and r["variant"] == item["variant"]
+                        and r["encoder"] == item["encoder"]
+                        and r["quality"] == item["quality"]
+                        and r["status"] == "unsupported"
+                    ),
+                    None,
+                )
+                if rejected:
+                    item.update(status="failed", reason=rejected["reason"])
+                    result["skipped"].append(
+                        {
+                            "sample": item["sample"],
+                            "variant": item["variant"],
+                            "encoder": item["encoder"],
+                            "reason": rejected["reason"],
+                        }
+                    )
+                    continue
                 if item["sample"] != "sample-1" and (
                     item["variant"],
                     item["encoder"],

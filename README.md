@@ -13,7 +13,7 @@ ArchiveBench tests short sections of your footage on your computer. Compare pict
 
 ## How it works
 
-For first use, compare representative footage and save reusable settings, or choose a built-in starter for immediate archiving. Quality priority, Balanced and Space priority describe intentions, not measured quality guarantees. No benchmark is required to use a starter.
+For first use, compare representative footage and save reusable settings, or choose a built-in starter for immediate archiving. The [starter catalog](docs/archiving.md#built-in-starter-presets) includes three CPU HEVC choices, AVC, NVIDIA HEVC and CPU AV1 alternatives. Labels describe intentions, not measured quality guarantees. No benchmark is required to use a starter.
 
 Your hardware determines which encoders work and how fast they run. Your footage determines the measured quality and file size. You choose which quality tradeoffs to accept, through visual/editor review or explicit acceptance without inspection. ArchiveBench does not select a preset from your GPU name alone.
 
@@ -54,7 +54,7 @@ uv tool update-shell
 archivebench doctor
 ```
 
-`doctor` checks tools and lists encoders. A listed encoder still needs to pass an actual encode on the selected footage format.
+`doctor` identifies your hardware and tools and lists the encoders included in FFmpeg. After saving a comparison config, run `archivebench doctor --config local-config.json` to check its exact encoder settings and output formats with bounded synthetic probes. A listed encoder is not necessarily supported by your GPU. See [hardware checks and their limits](docs/hardware.md).
 
 If the command is not found after installation, open a new terminal. The commands above install released **v0.2.0**; newer features merged into `main` require the [source-checkout installation](docs/installation.md#install-a-source-checkout). Follow that guide to run checkout commands with `uv run` or install persistent commands from the checkout. See [installation](docs/installation.md) for upgrades.
 
@@ -69,7 +69,7 @@ archivebench setup --config local-config.json
 archivebench plan local-config.json
 ```
 
-Setup saves your choices. Plan shows what will run before encoding starts.
+Setup checks availability for the selected output formats and suggests up to three verified encoders. Explicit encoder selections retain their failure reasons; the tool never silently reduces chroma to make a GPU work. Setup saves your choices. Plan shows what will run before encoding starts.
 
 | Choice | What it means |
 | --- | --- |
@@ -84,7 +84,7 @@ Setup saves your choices. Plan shows what will run before encoding starts.
 archivebench benchmark local-config.json --output runs/first-test
 ```
 
-The runner prepares reference material, then tests one setting per encoder on the first scene before testing the second settings. The first encode also checks compatibility. Failures stay visible. The runner does not silently change your requested format.
+The runner checks encoder availability within the allowance, prepares reference material, then tests one setting per encoder on the first scene before testing the second settings. Measured outputs still undergo format validation. Failures stay visible. The runner does not silently change your requested format.
 
 Each successful test measures video quality, file size and encoding time. While time remains, the runner checks promising settings on additional selected scenes. Encodes run one at a time. Avoid other exports or heavy editing work during the benchmark so the speed measurements are useful.
 

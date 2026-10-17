@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "type": "archive-preset",
+  "name": "AV1 alternative (CPU)",
+  "description": "Built-in unmeasured CPU AV1 starter using SVT preset 6 and CRF 30, informed by upstream speed/efficiency guidance and its 1080p starting point. Actual quality, size and encoding time are unknown; CRF values are not equivalent across codecs. Preserves the source format, so unsupported formats such as 4:2:2 require a different preset or an explicit conversion choice. No fallback. Benchmark representative footage when possible.",
+  "settings": {
+    "version": 2,
+    "type": "archive-settings",
+    "encoder": "libsvtav1",
+    "quality": 30,
+    "pixel_format": "source",
+    "resolution": "original",
+    "audio_mode": "copy",
+    "drop_audio_tracks": [],
+    "evidence_status": "unmeasured-starter"
+  },
+  "encoder_options": [
+    "-c:v",
+    "libsvtav1",
+    "-preset",
+    "6",
+    "-crf",
+    "30",
+    "-pix_fmt",
+    "yuv420p"
+  ],
+  "scope": {
+    "environment": {},
+    "footage": []
+  },
+  "evidence": {
+    "settings_fingerprint": "{\"audio_mode\":\"copy\",\"drop_audio_tracks\":[],\"encoder\":\"libsvtav1\",\"evidence_status\":\"unmeasured-starter\",\"pixel_format\":\"source\",\"quality\":30,\"resolution\":\"original\",\"type\":\"archive-settings\",\"version\":2}",
+    "benchmark_identity": null,
+    "measurement_status": "unmeasured-starter",
+    "visual_status": "unreviewed",
+    "estimates": {
+      "basis": "unknown",
+      "coverage": [],
+      "exclusions": [
+        "retained streams",
+        "verification",
+        "untested footage"
+      ]
+    }
+  }
+}

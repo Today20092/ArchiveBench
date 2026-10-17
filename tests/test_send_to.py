@@ -157,7 +157,9 @@ def test_interactive_errors_do_not_terminate_powershell(script):
             "powershell.exe",
             "-NoProfile",
             "-Command",
-            "& $env:ARCHIVEBENCH_TEST_SCRIPT; Write-Output 'HOST_STILL_OPEN'",
+            "& $env:ARCHIVEBENCH_TEST_SCRIPT; "
+            "if ($Error.Count) { [Console]::Error.WriteLine($Error[0].Exception.Message) }; "
+            "Write-Output 'HOST_STILL_OPEN'",
         ],
         env={**os.environ, "ARCHIVEBENCH_TEST_SCRIPT": str(WINDOWS / script)},
         input="\n",

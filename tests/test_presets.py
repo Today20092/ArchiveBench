@@ -30,13 +30,25 @@ def test_starter_presets_export_without_benchmark(tmp_path, monkeypatch, capsys)
         "Balanced",
         "Space priority",
         "Balanced (AVC alternative)",
+        "Faster encoding (NVIDIA HEVC)",
+        "AV1 alternative (CPU)",
     ]
-    assert [resolve_settings(preset)["quality"] for preset in documents] == [20, 24, 28, 23]
+    assert [resolve_settings(preset)["quality"] for preset in documents] == [20, 24, 28, 23, 31, 30]
+    assert [resolve_settings(preset)["encoder"] for preset in documents] == [
+        "libx265",
+        "libx265",
+        "libx265",
+        "libx264",
+        "hevc_nvenc",
+        "libsvtav1",
+    ]
     for index, (path, preset) in enumerate(zip(paths, documents)):
         settings = resolve_settings(preset)
         assert settings["pixel_format"] == "source"
         assert settings["resolution"] == "original"
         assert settings["audio_mode"] == "copy"
+        assert settings["drop_audio_tracks"] == []
+        assert preset["evidence"]["benchmark_identity"] is None
         assert preset["scope"]["footage"] == []
         assert preset["evidence"]["measurement_status"] == "unmeasured-starter"
         assert preset["evidence"]["estimates"]["basis"] == "unknown"

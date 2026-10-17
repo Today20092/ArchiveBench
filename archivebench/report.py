@@ -16,6 +16,9 @@ from .encoders import SPECS
 
 def public_result(result: dict[str, Any]) -> dict[str, Any]:
     value = json.loads(json.dumps(result))
+    # Capability diagnostics include device identifiers, executable and source paths.
+    # Keep that detailed evidence in local canonical results, not portable reports.
+    value.pop("capabilities", None)
     for item in value.get("work", []):
         if "reason" in item:
             item["reason"] = (

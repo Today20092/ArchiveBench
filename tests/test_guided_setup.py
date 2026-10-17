@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import threading
 
 import pytest
 
@@ -10,7 +11,44 @@ from textual.widgets import Button, Checkbox, Input, Select, SelectionList, Stat
 from archivebench.tui import ArchiveApp
 
 
-def test_first_use_comparison_requires_review_and_can_sample_selected_starter(tmp_path):
+def test_stopping_capability_review_does_not_enable_start(tmp_path, monkeypatch):
+    entered, released = threading.Event(), threading.Event()
+
+    def check(config):
+        entered.set()
+        assert released.wait(5)
+        return {"checks": [], "verified_encoders": ["libx265"]}
+
+    monkeypatch.setattr("archivebench.tui.availability", check)
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "empty")
+        async with app.run_test(size=(120, 60)) as pilot:
+            clip = str(tmp_path / "clip.mov")
+            app.query_one("#clips", SelectionList).add_option(("clip.mov", clip, True))
+            app.durations[clip] = 10
+            app.query_one("#comparison-output", Input).value = str(tmp_path / "comparison")
+            await pilot.pause()
+            app.review_comparison()
+            assert await asyncio.to_thread(entered.wait, 5)
+            app.request_stop()
+            released.set()
+            await app.workers.wait_for_complete()
+            assert app.query_one("#comparison-start", Button).disabled
+            assert not (tmp_path / "comparison" / "config.json").exists()
+            assert "stopped" in str(app.query_one("#comparison-brief", Static).content)
+
+    asyncio.run(exercise())
+
+
+def test_first_use_comparison_requires_review_and_can_sample_selected_starter(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "archivebench.tui.availability",
+        lambda _: {"checks": [], "verified_encoders": ["libx265", "libsvtav1"]},
+    )
+
     async def exercise():
         clip = tmp_path / "clip.mov"
         clip.touch()
@@ -26,6 +64,7 @@ def test_first_use_comparison_requires_review_and_can_sample_selected_starter(tm
             app.query_one(TabbedContent).active = "step-setup"
             await pilot.pause()
             await pilot.click("#comparison-review")
+            await app.workers.wait_for_complete()
             await pilot.pause()
             assert not app.query_one("#comparison-start", Button).disabled
             brief = str(app.query_one("#comparison-brief", Static).content)
@@ -40,6 +79,7 @@ def test_first_use_comparison_requires_review_and_can_sample_selected_starter(tm
             app.query_one("#comparison-kind", Select).value = "sample"
             await pilot.pause()
             await pilot.click("#comparison-review")
+            await app.workers.wait_for_complete()
             await pilot.pause()
             config = json.loads((tmp_path / "comparison" / "config.json").read_text())
             assert config["fixed_settings"] == {"libx265": [24]}
@@ -187,6 +227,7 @@ def test_standalone_sample_runs_shared_engine_and_keeps_original(tmp_path):
             app.query_one("#comparison-minutes", Input).value = "1"
             await pilot.pause()
             app.review_comparison()
+            await app.workers.wait_for_complete()
             assert not app.query_one("#comparison-start", Button).disabled
             app.run_comparison()
             await app.workers.wait_for_complete()

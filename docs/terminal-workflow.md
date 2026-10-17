@@ -74,7 +74,7 @@ archivebench job inspect project.json
 archivebench job run project.json --execute
 ```
 
-The list includes Quality priority, Balanced, Space priority and an explicit AVC alternative. These are unmeasured settings, not quality guarantees or measured size/time estimates. Preserve resolution, frame rate, bit depth and chroma by default; copy all audio tracks. Select format reductions or audio conversion explicitly. Technical incompatibility blocks that file; choose another compatible preset explicitly. If historical footage scope differs, a short comparison is optional; the TUI requires explicit acceptance of uncertain suitability.
+The [starter catalog](archiving.md#built-in-starter-presets) includes Quality priority, Balanced, Space priority, an AVC alternative, NVIDIA HEVC and CPU AV1. These are unmeasured settings, not quality guarantees or measured size/time estimates. They preserve resolution, frame rate, bit depth and chroma by default and copy all audio tracks. Select format reductions or audio conversion explicitly. Technical incompatibility blocks that file; choose another compatible preset explicitly. If historical footage scope differs, a short comparison is optional; the TUI requires explicit acceptance of uncertain suitability.
 
 Select video footage only: this workflow does not back up editing projects, graphics, music or sidecars. Destinations may be within the project, on an external drive or at an arbitrary path. Relative footage paths are retained; generated archives are excluded from discovery. Keep enough free space for originals and replacements. CRF/CQ output sizes are uncertain; historical estimates exclude retained streams and verification and cannot promise fit.
 

@@ -78,7 +78,7 @@ def experiment_plan(config: dict[str, Any]) -> dict[str, Any]:
             },
             "estimate": {
                 "seconds": None,
-                "note": "First full short sample measures compatibility, speed and quality together. Remaining estimates update from measured encode/scoring/preparation times. Budget includes initialization and reserves report/review time; cleanup and final writes may slightly overrun. No target search or separate pilots. Additional scenes check the first-scene measured frontier.",
+                "note": "Bounded synthetic capability checks precede footage measurements (up to 3 frames per combination, 10 seconds each, 30 seconds total within allowance). They do not measure quality or throughput. Remaining estimates update from measured encode/scoring/preparation times. Budget includes initialization and reserves report/review time; cleanup and final writes may slightly overrun. No target search or separate pilots. Additional scenes check the first-scene measured frontier.",
             },
         }
     comparison = config.get("comparison", "comprehensive")

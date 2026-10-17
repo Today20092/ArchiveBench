@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import sys
+import subprocess
 import webbrowser
 from pathlib import Path
 from contextlib import asynccontextmanager, nullcontext
@@ -39,6 +40,13 @@ from .archive import cleanup
 from .core import save, validate_config
 from .experiments import experiment_plan, fixed_settings
 from .encoders import SPECS
+from .hardware import (
+    DEFAULT_ENCODERS,
+    availability,
+    availability_summary,
+    inventory,
+    suggested_encoders,
+)
 from .jobs import validate_job
 from .presets import resolve_settings, starter_paths
 from .selection import selected_job, selection_defaults
@@ -202,6 +210,7 @@ class ArchiveApp(App):
                     allow_blank=False,
                     id="comparison-kind",
                 )
+                yield Static("Detecting CPU, GPUs and FFmpeg…", id="hardware-summary", markup=False)
                 yield Label("Total wall-clock allowance (minutes, including scoring and report)")
                 yield Input(value="30", id="comparison-minutes")
                 yield Label("New comparison output folder (keep outside selected source folders)")
@@ -218,10 +227,13 @@ class ArchiveApp(App):
                     yield Label(
                         "Comparison encoders (sample check uses the selected preset instead)"
                     )
-                    yield Input(value="libx265,libsvtav1,hevc_nvenc", id="comparison-encoders")
+                    yield Input(
+                        placeholder="Automatic verified choices; or explicit comma-separated encoders",
+                        id="comparison-encoders",
+                    )
                 yield Button("Review comparison settings", id="comparison-review")
                 yield Static(
-                    "Review before starting. No encoding has started.",
+                    "Review checks hardware with up to 3 synthetic frames per setting (10s each, 30s total). No footage encoding starts before Start.",
                     id="comparison-brief",
                     markup=False,
                 )
@@ -415,8 +427,26 @@ class ArchiveApp(App):
         self.query_one("#aac-options").display = False
         self.ui_ready = True
         self.refresh_summary()
+        self.detect_hardware()
         if self.sources:
             self.scan(self.sources)
+
+    @work(exclusive=True, group="hardware")
+    async def detect_hardware(self):
+        try:
+            found = await asyncio.to_thread(inventory)
+            names = (
+                ", ".join(dict.fromkeys(d["name"] for d in found["devices"]))
+                or "GPU inventory unavailable"
+            )
+            self.query_one("#hardware-summary", Static).update(
+                f"{found['cpu']} | {found['logical_cpus']} logical CPUs | {names}\n"
+                "Listed devices do not certify encode support. Review checks the selected output formats; decoding uses software."
+            )
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            self.query_one("#hardware-summary", Static).update(
+                f"Hardware inventory unavailable: {error}"
+            )
 
     def invalidate(self):
         self.deletion_preview = None
@@ -744,7 +774,13 @@ class ArchiveApp(App):
         if not self.busy and event.row_key.value is not None:
             self.query_one("#preset", Select).value = event.row_key.value
 
-    def review_comparison(self):
+    @work(exclusive=True, group="comparison-review")
+    async def review_comparison(self):
+        if self.busy:
+            return
+        self.set_busy(True)
+        self.stop_pending = False
+        self.query_one("#comparison-start", Button).disabled = True
         try:
             selected = self.query_one("#clips", SelectionList).selected
             if not selected:
@@ -774,9 +810,14 @@ class ArchiveApp(App):
                 if not isinstance(preset, str):
                     raise ValueError("Choose a preset in Settings before sampling")
                 settings = resolve_settings(json.loads(Path(preset).read_text(encoding="utf-8")))
+            automatic = (
+                not sample and not self.query_one("#comparison-encoders", Input).value.strip()
+            )
             encoders = (
                 [settings["encoder"]]
                 if sample
+                else list(DEFAULT_ENCODERS)
+                if automatic
                 else [
                     item.strip()
                     for item in self.query_one("#comparison-encoders", Input).value.split(",")
@@ -797,6 +838,24 @@ class ArchiveApp(App):
             }
             if sample:
                 config["fixed_settings"] = {settings["encoder"]: [settings["quality"]]}
+            self.query_one("#comparison-brief", Static).update(
+                "Checking hardware and exact source formats with bounded synthetic probes…"
+            )
+            capabilities = await asyncio.to_thread(availability, config)
+            if self.stop_pending:
+                self.query_one("#comparison-brief", Static).update(
+                    "Capability review stopped; no comparison started."
+                )
+                return
+            if automatic:
+                config["encoders"] = suggested_encoders(capabilities)
+                if not config["encoders"]:
+                    self.query_one("#comparison-brief", Static).update(
+                        availability_summary(capabilities)
+                    )
+                    raise ValueError(
+                        "No verified defaults. Review capability results or select explicit encoders; source format was not changed."
+                    )
             config["fixed_settings"] = fixed_settings(config)
             validate_config(config)
             if any(Path(path).resolve().is_relative_to(output) for path in selected):
@@ -810,7 +869,9 @@ class ArchiveApp(App):
             save(self.comparison_config, config)
             self.comparison_hash = hashlib.sha256(self.comparison_config.read_bytes()).hexdigest()
             self.query_one("#comparison-brief", Static).update(
-                json.dumps(experiment_plan(config), indent=2)
+                availability_summary(capabilities)
+                + "\n\n"
+                + json.dumps(experiment_plan(config), indent=2)
                 + "\nOriginals retained. Video-only sample; no fresh validation or visual acceptance. "
                 "Size/time extrapolation is approximate; excludes retained streams, verification, untested footage. "
                 "Incomplete/failed trials remain visible in the report. Review these exact choices before Start."
@@ -818,6 +879,10 @@ class ArchiveApp(App):
             self.query_one("#comparison-start", Button).disabled = False
         except (OSError, ValueError) as error:
             self.error(error)
+        finally:
+            self.set_busy(False)
+            if self.quit_pending:
+                self.exit()
 
     @work(exclusive=True, group="comparison")
     async def run_comparison(self):
