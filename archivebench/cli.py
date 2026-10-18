@@ -10,7 +10,7 @@ from .archive import archive, candidates, cleanup
 from .core import benchmark, primary, probe, run, save, validate_config
 from .encoders import discover
 from .hardware import DEFAULT_ENCODERS, availability, inventory, suggested_encoders
-from .report import write_report
+from .report import comparison_summary, write_report
 from .formats import VARIANT_PRESETS, output_video
 from .validation import quality_targets, validation_sections
 from .presets import inspect_preset, make_preset, resolve_settings, starter_paths
@@ -374,6 +374,17 @@ def main() -> None:
                 or datetime.fromtimestamp(progress.stat().st_mtime, timezone.utc).isoformat()
             )
             value["activity_note"] = "Saved checkpoint; current process activity is not observed."
+            results_path = args.output / "results.json"
+            if results_path.exists():
+                value["outcome"] = comparison_summary(
+                    json.loads(results_path.read_text(encoding="utf-8"))
+                )
+            value["next_step"] = (
+                "Open report.html if available, or regenerate it with archivebench report "
+                "on this folder's results.json. To retry unfinished work, rerun benchmark "
+                "with the same saved configuration and output folder; completed measurements "
+                "are checked before reuse. Interrupted trials restart from the beginning."
+            )
             print(json.dumps(value, indent=2))
         elif args.command == "job":
             if args.operation == "create":
@@ -484,6 +495,7 @@ def main() -> None:
             print(json.dumps([str(path) for path in candidates(args.source.resolve())], indent=2))
         elif args.command == "benchmark":
             result = benchmark(args.config, args.output)
+            print(comparison_summary(result))
             print(
                 json.dumps(
                     {
@@ -512,10 +524,36 @@ def main() -> None:
             cleanup(args.output, args.execute, args.reviewed)
     except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
         print(f"ArchiveBench: {error}", file=sys.stderr)
+        if args.command == "benchmark":
+            print(
+                "Correct the reported problem, then rerun with the same configuration and output folder "
+                "to reuse checked measurements. If source identities or encoding settings changed, "
+                "choose a new output folder. Saved results.json can regenerate a report; "
+                "interrupted trials restart from the beginning.",
+                file=sys.stderr,
+            )
+        elif args.command in ("job", "archive"):
+            print(
+                "Correct the reported problem and repeat the original job/archive command without --execute to preflight again. "
+                "Inspect archive-summary.html or archive-manifest.json if processing started; "
+                "completed files are rechecked before reuse. A different job needs a new destination.",
+                file=sys.stderr,
+            )
         raise SystemExit(1) from error
     except KeyboardInterrupt:
+        recovery = (
+            "Saved measurements remain in the output folder. Rerun benchmark with the same "
+            "configuration and output folder; completed measurements are checked before reuse. "
+            "Interrupted trials restart from the beginning. Use report on results.json to view saved evidence."
+            if args.command == "benchmark"
+            else "Inspect the saved archive manifest/summary and correct any failures. "
+            "Rerun the same archive job; completed files are rechecked and unfinished files restart "
+            "from the beginning. Any completed deletions remain permanent."
+            if args.command in ("job", "archive", "cleanup", "acceptance")
+            else "Inspect any saved output before retrying the same command."
+        )
         print(
-            "Stopped. Saved trials remain available; rerun the same configuration to resume.",
+            "Stopped. " + recovery,
             file=sys.stderr,
         )
         raise SystemExit(130) from None

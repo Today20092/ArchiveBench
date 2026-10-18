@@ -114,6 +114,8 @@ See [target tuning and validation](docs/benchmark.md#screening-and-tuning) for t
 
 ## Read the report
 
+In the source-checkout workflow, start with the outcome and suggested next action. Completed measurements, failed tests and unfinished work are separate; an empty comparison cannot supply a measured preset. Reopening the report shows saved evidence, not a fresh check of your files. See [quick comparison](docs/quick-comparison.md) for recovery and [archive jobs](docs/archiving.md#reusable-project-jobs) for the next handoff.
+
 1. Compare quality, video size and encoding time. Use the charts to find settings that fit your priorities. The shaded areas show the preferred direction, not an accepted result.
 2. Check which footage sections were measured. Failed tests and missing measurements limit the conclusion. Fixed comparisons give starting points. Target-tuning runs separately show whether each quality target passed fresh validation.
 3. Select settings to compare. Use the two selectors to compare the same footage sections. Open the measurements table for details.

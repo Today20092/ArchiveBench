@@ -22,6 +22,17 @@ try {
  assert.equal(preset.evidence.measurement_status,'measured starting point');
  assert.ok(preset.evidence.estimates.video_bytes_per_second>0);
  for(const width of [1440,390]) {await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);}
+ const empty = JSON.parse(html.match(/<script id="data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+ empty.trials = [];
+ empty.status = 'interrupted';
+ delete empty.workflow_summary;
+ const emptyHTML = html.replace(/(<script id="data" type="application\/json">)[\s\S]*?(<\/script>)/, (_, start, end) => start + JSON.stringify(empty).replaceAll('<','\\u003c') + end);
+ await page.goto('about:blank');
+ await page.setContent(emptyHTML);
+ await page.waitForFunction(()=>window.__archivebench);
+ assert.match(await page.locator('#outcome').innerText(),/No measured starting point/);
+ assert.equal(await page.locator('#handoff').isVisible(),false);
+ assert.match(await page.locator('#run-limit').innerText(),/Partial experiment/);
  assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
  console.log('Fixed report, starting preset export, responsive layout and offline checks passed');
 } finally {await browser.close();}

@@ -45,7 +45,7 @@ $('duration').options[0].textContent = sourceDurations.size ? `Tested sources ·
 const footageLabels = [...new Set(result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning').map(sample => sample.label))];
 $('overview').textContent = `${footageLabels.slice(0, 2).join(' · ') || 'No footage measured'}${footageLabels.length > 2 ? ` and ${footageLabels.length - 2} more sections` : ''}. Compared ${[...new Set(encoderNames.map(codec))].join(', ') || 'no codecs'} using short footage sections.`;
 $('coverage').textContent = `${result.samples.filter(sample => (sample.stage ?? 'tuning') === 'tuning').length} of ${result.config.samples.length} planned tuning samples · ${result.samples.filter(sample => sample.stage === 'validation').length}/${result.validation_required ?? 0} fresh sections measured · ${sampledSeconds.toFixed(1)} seconds sampled · ${result.trials.length} measured trials · ${result.config.mode} mode. ${result.samples.map(sample => `${sample.label} (${sample.video.width} × ${sample.video.height})`).join('; ')}`;
-$('run-limit').textContent = [result.status !== 'completed' ? 'Partial experiment. Missing measurements cannot qualify a configuration.' : '', result.skipped.length ? `${result.skipped.length} skipped or failed probes. See technical notes for details.` : ''].filter(Boolean).join(' ');
+$('run-limit').textContent = result.workflow_summary ?? [result.status !== 'completed' ? 'Partial experiment. Missing measurements cannot qualify a configuration.' : '', result.skipped.length ? `${result.skipped.length} skipped or failed probes. See technical notes for details.` : ''].filter(Boolean).join(' ');
 $('run-limit').hidden = !$('run-limit').textContent;
 $('skip-title').textContent = `Skipped or failed configurations (${result.skipped.length})`;
 $('skips').textContent = JSON.stringify(result.skipped, null, 2);
@@ -55,7 +55,7 @@ const savedSmallest = [...savedRows].sort((a,b) => a.gib-b.gib)[0];
 $('outcome').textContent = savedSmallest ? 'Validated settings are available. Compare size and time, then review the footage before exporting settings.' : 'No validated project recommendation yet. Explore the measurements; fresh-footage validation is absent, failed or incomplete.';
 $('saved-conclusion').textContent = `Saved quality targets: ${qualityTargets(result).join(', ')}. ` + (savedSmallest ? 'Validated choices are available at one or more targets; compare each level below. Visual review remains separate.' : 'Provisional tuning evidence. No validated project recommendation, because fresh-footage validation is absent, failed or incomplete. Per-sample results remain available for exploration.');
 if (result.config.strategy === 'fixed') {
-  $('outcome').textContent = 'Fixed-setting comparison. Compare measured quality, storage and speed, review the footage, then export a reusable starting preset.';
+  $('outcome').textContent = result.trials.length ? 'Fixed-setting comparison. Compare measured quality, storage and speed, review the footage, then export a reusable starting preset.' : 'No measured starting point is available. Review failed or unfinished work below, correct the cause and retry with the saved configuration.';
   $('saved-conclusion').textContent = 'Quality scores are observations; no VMAF target was searched. Starting presets are not fresh-footage validation or visual acceptance. Additional-scene coverage is explicit; select the first scene for a like-for-like comparison of all measured settings.';
 }
 

@@ -50,6 +50,49 @@ def test_navigation_keeps_current_summaries_without_rewriting(tmp_path, monkeypa
     asyncio.run(exercise())
 
 
+def test_reopen_saved_job_shows_snapshot_without_claiming_current_acceptance(tmp_path):
+    document = make_preset(
+        {
+            "version": 2,
+            "type": "archive-settings",
+            "encoder": "libx264",
+            "quality": 25,
+            "pixel_format": "source",
+        },
+        "Historical <camera> preset",
+    )
+    job = {
+        "version": 1,
+        "type": "archive-job",
+        "source_root": str(tmp_path / "camera"),
+        "output_root": str(tmp_path / "archive"),
+        "preset": document,
+        "selected_files": ["clip.mov"],
+        "exceptions": [],
+    }
+    path = tmp_path / "saved.json"
+    save(path, job)
+
+    async def exercise():
+        app = ArchiveApp(library=tmp_path / "empty")
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.query_one("#saved-job", Input).value = str(path)
+            await pilot.pause()
+            text = str(app.query_one("#review-summary", Static).content)
+            assert str(tmp_path / "camera") in text and str(tmp_path / "archive") in text
+            assert "Historical <camera> preset" in text
+            assert "clip.mov" in text and "historical" in text
+            assert "archive-summary.html" in text
+            assert not app.reviewed
+            await pilot.resize_terminal(80, 25)
+            app.query_one(TabbedContent).active = "step-review"
+            await pilot.pause()
+            assert app.query_one("#next").region.bottom <= app.size.height
+            assert json.loads(path.read_text()) == job
+
+    asyncio.run(exercise())
+
+
 def test_readable_settings_and_aac_job(tmp_path, monkeypatch):
     async def exercise():
         source = tmp_path / "source"
