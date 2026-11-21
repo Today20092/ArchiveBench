@@ -17,3 +17,7 @@ For planning, creating or implementing tickets, use the local Markdown tracker d
 For triage readiness, use [docs/agents/triage-labels.md](docs/agents/triage-labels.md); keep readiness separate from implementation progress.
 
 Before domain design or implementation, follow [docs/agents/domain.md](docs/agents/domain.md) for glossary and decision records.
+
+## Git workflow
+
+For branches, worktrees, pull requests or merging, read [the Git workflow](docs/branch-workflow.md).
