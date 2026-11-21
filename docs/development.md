@@ -14,9 +14,9 @@ uv run pytest -q
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-npm ci
-npm run build
-npm test
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm test
 node --test report/playback.test.mjs
 uv build
 ```

@@ -3,7 +3,16 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "scripts": {"build": "esbuild report/app.js --bundle --minify --format=iife --outfile=archivebench/assets/report.js --legal-comments=inline", "test": "node --test report/test.mjs"},
-  "dependencies": {"@tanstack/charts": "1.1.0"},
-  "devDependencies": {"esbuild": "0.25.12", "@playwright/test": "1.56.1"}
+  "scripts": {
+    "build": "esbuild report/app.js --bundle --minify --format=iife --outfile=archivebench/assets/report.js --legal-comments=inline",
+    "test": "node --test report/test.mjs"
+  },
+  "dependencies": {
+    "@tanstack/charts": "1.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "esbuild": "0.25.12"
+  },
+  "packageManager": "pnpm@11.21.0"
 }

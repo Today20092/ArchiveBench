@@ -38,12 +38,14 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ty check
       - run: uv run pytest -q
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
       - run: node --test report/playback.test.mjs
       - run: git diff --exit-code -- archivebench/assets/report.js
       - run: uv run tests/create_demo.py
