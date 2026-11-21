@@ -4,7 +4,7 @@
 
 ## Work on a task
 
-1. Work in a worktree the host manages, based on current `origin/main`. A T3 Code thread on the main checkout moves itself with `t3_worktree_handoff` before editing; the project's worktree script runs `uv sync` and `npm ci`. Without host worktree tools, use `git worktree add` and run `uv sync` and `npm ci`.
+1. Work in a worktree the host manages, based on current `origin/main`. A T3 Code thread on the main checkout moves itself with `t3_worktree_handoff` before editing; the project's worktree script runs `uv sync` and `pnpm install --frozen-lockfile`. Without host worktree tools, use `git worktree add` and run both.
 2. Commit work in progress instead of using `git stash`: stashes are shared by every worktree.
 3. Make the change and run the checks in [development](development.md) and complete the [documentation review](development.md#pull-request-documentation-review).
 4. End every code task with a commit and a pull request to `main`, without being asked. Opening a PR is safe; only a merge changes `main`; nothing deploys.
