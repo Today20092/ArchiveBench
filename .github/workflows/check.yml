@@ -15,7 +15,7 @@ jobs:
         shell: pwsh
         run: |
           $ffmpegArchive = Join-Path $env:RUNNER_TEMP 'ffmpeg.7z'
-          Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-full_build.7z' -OutFile $ffmpegArchive
+          Invoke-WebRequest 'https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-full_build.7z' -OutFile $ffmpegArchive
           $expectedHash = '0fff188997a499b5382e0f66e845d4556c48c54f0113ebed4853d556dbdd7059'
           if ((Get-FileHash -LiteralPath $ffmpegArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'FFmpeg checksum mismatch' }
           $ffmpegRoot = Join-Path $env:RUNNER_TEMP 'archivebench-ffmpeg'
@@ -38,12 +38,14 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ty check
       - run: uv run pytest -q
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
       - run: node --test report/playback.test.mjs
       - run: git diff --exit-code -- archivebench/assets/report.js
       - run: uv run tests/create_demo.py
